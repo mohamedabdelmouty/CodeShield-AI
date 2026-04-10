@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VibeGuard Dashboard — vulnerable-sample.js</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #03060b;
+      --surface: #0d1117;
+      --surface-raised: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #7d8590;
+      --accent: #2f81f7;
+      --success: #3fb950;
+      --danger: #f85149;
+      --warning: #d29922;
+    }
+
+    * { box-sizing: border-box; }
+    body { 
+      background: var(--bg); 
+      color: var(--text); 
+      font-family: 'Inter', -apple-system, system-ui, sans-serif; 
+      margin: 0; 
+      line-height: 1.5;
+    }
+
+    .layout { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+
+    /* Sidebar */
+    .sidebar { 
+      background: var(--surface); 
+      border-right: 1px solid var(--border); 
+      padding: 32px 24px; 
+      display: flex; 
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700; margin-bottom: 40px; }
+    .logo-shield { font-size: 24px; }
+
+    .stat-card { 
+      background: var(--surface-raised); 
+      border: 1px solid var(--border); 
+      border-radius: 12px; 
+      padding: 20px; 
+      margin-bottom: 24px;
+    }
+    .score-value { font-size: 48px; font-weight: 800; text-align: center; margin: 10px 0; }
+    .score-label { text-align: center; color: var(--text-muted); font-size: 14px; font-weight: 500; }
+    .grade-badge { 
+      display: block; 
+      text-align: center; 
+      padding: 6px; 
+      border-radius: 6px; 
+      font-weight: 700; 
+      margin-top: 10px;
+    }
+
+    .tabs { margin-top: 20px; }
+    .tab { 
+      display: flex; 
+      align-items: center; 
+      padding: 10px 14px; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin-bottom: 4px; 
+      transition: all 0.2s;
+    }
+    .tab:hover { background: var(--surface-raised); }
+    .tab.active { background: var(--accent); color: white; }
+    .tab.active .tab-count { background: rgba(255,255,255,0.2); }
+    .tab-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 12px; }
+    .tab-label { flex: 1; font-weight: 500; font-size: 14px; }
+    .tab-count { background: var(--surface-raised); padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+    .tab.disabled { opacity: 0.5; pointer-events: none; }
+
+    /* Content Area */
+    .main { overflow-y: auto; padding: 40px 60px; }
+    .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+    .page-title { margin: 0; font-size: 32px; font-weight: 700; }
+    .target-path { color: var(--text-muted); font-family: 'Fira Code', monospace; font-size: 14px; margin-top: 8px; }
+
+    .status-pill { 
+      padding: 6px 16px; 
+      border-radius: 100px; 
+      font-weight: 600; 
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Vulnerability Cards */
+    .vuln-card { 
+      border: 1px solid var(--border); 
+      border-radius: 12px; 
+      padding: 24px; 
+      margin-bottom: 24px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .vuln-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    
+    .vuln-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .vuln-meta { display: flex; align-items: center; gap: 12px; }
+    .vuln-sev-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; }
+    .vuln-id { color: var(--text-muted); font-family: 'Fira Code', monospace; font-size: 12px; }
+    .vuln-cwe { background: #2f363d; color: #8b949e; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .vuln-file { color: var(--accent); font-size: 13px; font-weight: 500; }
+
+    .vuln-name { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .vuln-msg { font-size: 15px; color: var(--text-muted); margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+
+    .vuln-details { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+    .detail-section strong { display: block; font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.05em; }
+    .detail-section p { margin: 0; font-size: 14px; color: #c9d1d9; }
+    .remediation-box { background: rgba(63, 185, 80, 0.1); border: 1px solid rgba(63, 185, 80, 0.2); color: #aff5b4; padding: 12px; border-radius: 8px; font-size: 13px; }
+
+    .snippet-container { margin-top: 24px; }
+    .snippet-header { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+    .vuln-snippet { 
+      background: #010409; 
+      padding: 16px; 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      margin: 0; 
+      font-family: 'Fira Code', monospace; 
+      font-size: 12px; 
+      overflow-x: auto; 
+    }
+
+    .empty-state { text-align: center; padding: 100px 0; color: var(--text-muted); }
+    .empty-icon { font-size: 64px; margin-bottom: 20px; }
+
+    /* Filtering Classes */
+    .hidden { display: none !important; }
+
+    @media (max-width: 1200px) {
+      .vuln-details { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-shield">🛡️</span>
+        <span>VibeGuard</span>
+      </div>
+
+      <div class="stat-card">
+        <div class="score-label">SECURITY SCORE</div>
+        <div class="score-value" style="color: var(--danger)">0</div>
+        <div class="grade-badge" style="background: var(--danger)20; color: var(--danger)">
+          GRADE: F
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="score-label">FILES SCANNED</div>
+        <div style="font-size: 20px; font-weight: 700; text-align: center; margin-top: 8px;">1</div>
+        <div style="font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 4px;">in 29ms</div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" onclick="filterBySeverity('ALL')" id="tab-ALL">
+          <span class="tab-dot" style="background: var(--accent)"></span>
+          <span class="tab-label">All Issues</span>
+          <span class="tab-count">15</span>
+        </div>
+        
+        <div class="tab enabled" onclick="filterBySeverity('CRITICAL')" id="tab-CRITICAL">
+          <span class="tab-dot" style="background:[91m"></span>
+          <span class="tab-label">CRITICAL</span>
+          <span class="tab-count">5</span>
+        </div>
+        <div class="tab enabled" onclick="filterBySeverity('HIGH')" id="tab-HIGH">
+          <span class="tab-dot" style="background:[31m"></span>
+          <span class="tab-label">HIGH</span>
+          <span class="tab-count">7</span>
+        </div>
+        <div class="tab enabled" onclick="filterBySeverity('MEDIUM')" id="tab-MEDIUM">
+          <span class="tab-dot" style="background:[93m"></span>
+          <span class="tab-label">MEDIUM</span>
+          <span class="tab-count">1</span>
+        </div>
+        <div class="tab disabled" onclick="filterBySeverity('LOW')" id="tab-LOW">
+          <span class="tab-dot" style="background:[33m"></span>
+          <span class="tab-label">LOW</span>
+          <span class="tab-count">0</span>
+        </div>
+        <div class="tab enabled" onclick="filterBySeverity('INFO')" id="tab-INFO">
+          <span class="tab-dot" style="background:[36m"></span>
+          <span class="tab-label">INFO</span>
+          <span class="tab-count">2</span>
+        </div>
+      </div>
+
+      <div style="flex: 1"></div>
+      <div style="font-size: 11px; color: var(--text-muted); text-align: center;">
+        VibeGuard v1.0.0 • 2/21/2026
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="top-bar">
+        <div>
+          <h1 class="page-title">Security Dashboard</h1>
+          <div class="target-path">C:\Users\mahme\OneDrive\Desktop\CodeShield AI\vibeguard\examples\vulnerable-sample.js</div>
+        </div>
+        <div class="status-pill" style="background: var(--danger)20; color: var(--danger)">
+          ⚠ VULNERABLE
+        </div>
+      </div>
+
+      <div id="vulnerability-list">
+        
+      <div class="vuln-card severity-CRITICAL" style="border-left: 4px solid [91m; background: [91m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[91m20; color:[91m">CRITICAL</span>
+            <span class="vuln-id">VG-00001</span>
+            <span class="vuln-cwe">CWE-89</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:29</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">SQL Injection</div>
+          <div class="vuln-msg">Template literal used to construct SQL query with dynamic expressions.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Dynamic SQL queries built with template literals allow SQL injection if inputs are not properly sanitized.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Use parameterized queries or prepared statements. Example: db.query(&quot;SELECT * FROM users WHERE id = ?&quot;, [userId])</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: Template literal with user input directly in SQL
+    const query = `SELECT * FROM users WHERE username = &#39;${username}&#39; AND active = 1`;
+    return mysql.query(query);
+}</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-CRITICAL" style="border-left: 4px solid [91m; background: [91m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[91m20; color:[91m">CRITICAL</span>
+            <span class="vuln-id">VG-00004</span>
+            <span class="vuln-cwe">CWE-798</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:15</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Hardcoded Secret</div>
+          <div class="vuln-msg">Potential hardcoded secret detected in variable &quot;apiKey&quot;.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Hardcoding secrets in source code exposes them in version control history and to anyone with code access.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Store secrets in environment variables (process.env.SECRET_KEY) or a secrets manager (AWS Secrets Manager, HashiCorp Vault).</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>// ─── CRITICAL: Hardcoded Secret (VG-SEC-001) ───────────────────────────────
+const apiKey = &#39;sk-proj-abc123XYZ789supersecretpassword!&#39;;
+const password = &#39;MySuperSecretP@ssw0rd2024!&#39;;
+const jwtSecret = &#39;eyJhbGciOiJIUzI1NiJ9.supersecret.abc123&#39;;</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-CRITICAL" style="border-left: 4px solid [91m; background: [91m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[91m20; color:[91m">CRITICAL</span>
+            <span class="vuln-id">VG-00005</span>
+            <span class="vuln-cwe">CWE-798</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:16</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Hardcoded Secret</div>
+          <div class="vuln-msg">Potential hardcoded secret detected in variable &quot;password&quot;.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Hardcoding secrets in source code exposes them in version control history and to anyone with code access.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Store secrets in environment variables (process.env.SECRET_KEY) or a secrets manager (AWS Secrets Manager, HashiCorp Vault).</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>const apiKey = &#39;sk-proj-abc123XYZ789supersecretpassword!&#39;;
+const password = &#39;MySuperSecretP@ssw0rd2024!&#39;;
+const jwtSecret = &#39;eyJhbGciOiJIUzI1NiJ9.supersecret.abc123&#39;;
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-CRITICAL" style="border-left: 4px solid [91m; background: [91m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[91m20; color:[91m">CRITICAL</span>
+            <span class="vuln-id">VG-00006</span>
+            <span class="vuln-cwe">CWE-798</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:17</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Hardcoded Secret</div>
+          <div class="vuln-msg">Potential hardcoded secret detected in variable &quot;jwtSecret&quot;.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Hardcoding secrets in source code exposes them in version control history and to anyone with code access.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Store secrets in environment variables (process.env.SECRET_KEY) or a secrets manager (AWS Secrets Manager, HashiCorp Vault).</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>const password = &#39;MySuperSecretP@ssw0rd2024!&#39;;
+const jwtSecret = &#39;eyJhbGciOiJIUzI1NiJ9.supersecret.abc123&#39;;
+
+const dbConfig = {</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-CRITICAL" style="border-left: 4px solid [91m; background: [91m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[91m20; color:[91m">CRITICAL</span>
+            <span class="vuln-id">VG-00007</span>
+            <span class="vuln-cwe">CWE-798</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:22</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Hardcoded Secret</div>
+          <div class="vuln-msg">Object property &quot;password&quot; contains a potential hardcoded secret.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Secrets embedded in object literals are exposed in source control and runtime logs.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Load secrets from environment variables at runtime.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    user: &#39;root&#39;,
+    password: &#39;productionPassword123!&#39;,   // ← Hardcoded DB password
+};
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00002</span>
+            <span class="vuln-cwe">CWE-79</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:43</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Cross-Site Scripting (XSS)</div>
+          <div class="vuln-msg">Unsafe assignment to &quot;innerHTML&quot; may allow XSS if the value contains user-controlled input.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Assigning unsanitized values to innerHTML/outerHTML causes the browser to parse and execute the string as HTML, enabling XSS attacks.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Use textContent instead of innerHTML for plain text. For HTML, sanitize using DOMPurify: element.innerHTML = DOMPurify.sanitize(userInput)</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: Directly injecting user content as HTML
+    document.getElementById(&#39;profile&#39;).innerHTML = userHtml;
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00003</span>
+            <span class="vuln-cwe">CWE-79</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:48</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Cross-Site Scripting (XSS)</div>
+          <div class="vuln-msg">document.write() called with a non-literal argument — potential XSS vector.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>document.write() and document.writeln() are deprecated and dangerous. They parse the input as HTML, which can execute injected scripts.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Avoid document.write() entirely. Use DOM methods like document.createElement() and textContent assignment.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: document.write with dynamic data
+    document.write(data);
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00008</span>
+            <span class="vuln-cwe">CWE-95</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:55</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Dangerous Code Evaluation</div>
+          <div class="vuln-msg">eval() is dangerous and can execute arbitrary code.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>eval() executes a string as JavaScript code. If the string contains user input, it leads to code injection / RCE.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Remove eval() entirely. Use JSON.parse() for JSON, or refactor to use static code patterns.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: eval() with user-provided code
+    return eval(userCode);
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00009</span>
+            <span class="vuln-cwe">CWE-95</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:60</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Dangerous Code Evaluation</div>
+          <div class="vuln-msg">new Function() dynamically creates a function from a string — equivalent to eval().</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>new Function(body) compiles and executes a string as JavaScript. This is a code injection vector particularly dangerous with external input.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Avoid new Function(). Use static function definitions or import() for dynamic modules.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: new Function() is equivalent to eval
+    const fn = new Function(&#39;params&#39;, body);
+    return fn({ user: &#39;admin&#39; });
+}</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00010</span>
+            <span class="vuln-cwe">CWE-22</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:73</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Path Traversal</div>
+          <div class="vuln-msg">fs.readFileSync() called with a non-literal path — potential path traversal.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>If path is derived from user input without validation, attackers can use &quot;../../../etc/passwd&quot; to read arbitrary files.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Validate and sanitize all path inputs. Use path.resolve() and verify the result stays within an allowed base directory:
+  const safePath = path.resolve(baseDir, userInput);
+  if (!safePath.startsWith(baseDir)) throw new Error(&quot;Access denied&quot;)</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: No validation on filename before passing to fs
+    return fs.readFileSync(filename, &#39;utf-8&#39;);
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00012</span>
+            <span class="vuln-cwe">CWE-22</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:80</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Path Traversal</div>
+          <div class="vuln-msg">fs.readFileSync() called with a non-literal path — potential path traversal.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>If path is derived from user input without validation, attackers can use &quot;../../../etc/passwd&quot; to read arbitrary files.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Validate and sanitize all path inputs. Use path.resolve() and verify the result stays within an allowed base directory:
+  const safePath = path.resolve(baseDir, userInput);
+  if (!safePath.startsWith(baseDir)) throw new Error(&quot;Access denied&quot;)</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    const filePath = path.join(&#39;/var/www/public&#39;, userPath);
+    res.send(fs.readFileSync(filePath));
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-HIGH" style="border-left: 4px solid [31m; background: [31m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[31m20; color:[31m">HIGH</span>
+            <span class="vuln-id">VG-00013</span>
+            <span class="vuln-cwe">CWE-22</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:119</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Path Traversal</div>
+          <div class="vuln-msg">fs.readFileSync() called with a non-literal path — potential path traversal.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>If path is derived from user input without validation, attackers can use &quot;../../../etc/passwd&quot; to read arbitrary files.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">Validate and sanitize all path inputs. Use path.resolve() and verify the result stays within an allowed base directory:
+  const safePath = path.resolve(baseDir, userInput);
+  if (!safePath.startsWith(baseDir)) throw new Error(&quot;Access denied&quot;)</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    }
+    return fs.readFileSync(safePath, &#39;utf-8&#39;);
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-MEDIUM" style="border-left: 4px solid [93m; background: [93m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[93m20; color:[93m">MEDIUM</span>
+            <span class="vuln-id">VG-00011</span>
+            <span class="vuln-cwe">CWE-22</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:79</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Path Traversal</div>
+          <div class="vuln-msg">path.join() called with a non-literal argument — verify that path segments are validated.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Dynamic segments in path.join() may introduce traversal vulnerabilities if they come from user-controlled sources.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">After path.join(), verify the result is within your intended base directory using path.resolve().</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: Path join with unvalidated user input
+    const filePath = path.join(&#39;/var/www/public&#39;, userPath);
+    res.send(fs.readFileSync(filePath));
+}</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-INFO" style="border-left: 4px solid [36m; background: [36m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[36m20; color:[36m">INFO</span>
+            <span class="vuln-id">VG-00014</span>
+            <span class="vuln-cwe">CWE-338</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:87</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Insecure Random Number Generator</div>
+          <div class="vuln-msg">Math.random() detected — review if this is used in any security-sensitive context.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Math.random() produces predictable output and should not be used for security tokens, passwords, or cryptographic operations.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">For security purposes, use crypto.randomBytes() or crypto.randomUUID() from the built-in crypto module.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: Math.random() is not cryptographically secure
+    const token = Math.random().toString(36).substring(2);
+    return token;
+}</code></pre>
+          </div>
+        </div>
+      </div>
+      <div class="vuln-card severity-INFO" style="border-left: 4px solid [36m; background: [36m08">
+        <div class="vuln-header">
+          <div class="vuln-meta">
+            <span class="vuln-sev-badge" style="background:[36m20; color:[36m">INFO</span>
+            <span class="vuln-id">VG-00015</span>
+            <span class="vuln-cwe">CWE-338</span>
+          </div>
+          <div class="vuln-file">📍 examples/vulnerable-sample.js:93</div>
+        </div>
+        <div class="vuln-body">
+          <div class="vuln-name">Insecure Random Number Generator</div>
+          <div class="vuln-msg">Math.random() detected — review if this is used in any security-sensitive context.</div>
+          
+          <div class="vuln-details">
+            <div class="detail-section">
+              <strong>💡 Description</strong>
+              <p>Math.random() produces predictable output and should not be used for security tokens, passwords, or cryptographic operations.</p>
+            </div>
+            <div class="detail-section">
+              <strong>💊 Remediation</strong>
+              <div class="remediation-box">For security purposes, use crypto.randomBytes() or crypto.randomUUID() from the built-in crypto module.</div>
+            </div>
+          </div>
+
+          
+          <div class="snippet-container">
+            <div class="snippet-header">Code Context</div>
+            <pre class="vuln-snippet"><code>    // BAD: Math.random() for security-sensitive CSRF token
+    return Math.random().toString(16).substring(2);
+}
+</code></pre>
+          </div>
+        </div>
+      </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function filterBySeverity(severity) {
+      // Update tabs
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + severity).classList.add('active');
+
+      // Update list
+      const cards = document.querySelectorAll('.vuln-card');
+      if (severity === 'ALL') {
+        cards.forEach(c => c.classList.remove('hidden'));
+      } else {
+        cards.forEach(c => {
+          if (c.classList.contains('severity-' + severity)) {
+            c.classList.remove('hidden');
+          } else {
+            c.classList.add('hidden');
+          }
+        });
+      }
+    }
+  </script>
+</body>
+</html>

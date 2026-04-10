@@ -1,0 +1,13 @@
+# Root Gitignore for CodeShield AI
+node_modules/
+dist/
+*.env
+api.env
+.vscode/
+
+# Ignore project inner build artifacts
+vibeguard/dist/
+vibeguard/node_modules/
+vibeguard/vscode-extension/dist/
+vibeguard/vscode-extension/node_modules/
+vibeguard/vscode-extension/*.vsix

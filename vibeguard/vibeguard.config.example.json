@@ -1,0 +1,27 @@
+{
+    "rules": {
+        "disabled": [],
+        "enabled": [],
+        "overrides": {
+            "VG-RAND-001": {
+                "severity": "LOW"
+            }
+        }
+    },
+    "ignore": [
+        "node_modules/**",
+        "dist/**",
+        "build/**",
+        "coverage/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/*.test.js",
+        "**/*.spec.js",
+        "**/*.min.js",
+        "**/*.bundle.js"
+    ],
+    "threshold": 70,
+    "format": "terminal",
+    "output": null,
+    "aiEndpoint": null
+}

@@ -269,7 +269,16 @@ async function scanActiveFile(document: vscode.TextDocument): Promise<void> {
             .filter((r) => r.enabled && !disabledRules.includes(r.id))
             .map((r) => r.id);
 
-        const vulnerabilities = scanCode(code, filePath, enabledRuleIds);
+        const ai = getAiConfig();
+        const vulnerabilities = await scanCode(code, filePath, {
+            target: filePath,
+            rules: enabledRuleIds,
+            enableAi: ai.enabled,
+            aiEndpoint: ai.endpoint,
+            aiApiKey: ai.apiKey,
+            aiModel: ai.model,
+        });
+
         diagnosticsProvider.updateFileDiagnostics(document, vulnerabilities);
 
         // Update status bar with file-level info

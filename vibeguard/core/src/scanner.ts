@@ -181,9 +181,19 @@ async function scanFile(
                     location: { ...v.location, file: filePath, snippet },
                 });
             }
-        } catch (err) {
-            // Don't fail scan if AI is unavailable
+        } catch (err: any) {
+            // Surface AI unavailability as an INFO vulnerability
             console.warn(`[VibeGuard] AI detection failed for ${filePath}:`, err);
+            vulnerabilities.push({
+                id: makeVulnId(),
+                ruleId: 'VG-AI-ERROR',
+                ruleName: 'AI Subsystem Error',
+                severity: 'INFO',
+                message: `AI analysis skipped. Reason: ${err.message || 'Unknown error'}`,
+                description: 'The AI backend could not process this file. This can happen due to API rate limits (HTTP 429), timeouts, or if the file is too large.',
+                remediation: 'Check your API limits/keys, or try scanning individual files with delays.',
+                location: { file: filePath, line: 1, column: 0 },
+            });
         }
     }
 
@@ -269,15 +279,15 @@ export async function scan(options: ScanOptions): Promise<SecurityReport> {
 /**
  * Scan a raw string of code (useful for VS Code extension — no file I/O).
  */
-export function scanCode(
+export async function scanCode(
     code: string,
     filePath: string,
-    enabledRuleIds?: string[]
-): Vulnerability[] {
+    options?: ScanOptions
+): Promise<Vulnerability[]> {
     _vulnIdCounter = 0;
     const allRules = getAllRules();
-    const rulesToRun = enabledRuleIds && enabledRuleIds.length > 0
-        ? allRules.filter((r) => enabledRuleIds.includes(r.id))
+    const rulesToRun = options?.rules && options.rules.length > 0
+        ? allRules.filter((r) => options.rules!.includes(r.id))
         : allRules.filter((r) => r.enabled);
 
     const lines = code.split('\n');
@@ -308,6 +318,42 @@ export function scanCode(
             rule.check(context, ast);
         } catch {
             // Swallow errors
+        }
+    }
+
+    // AI-powered detection (optional)
+    if (options?.enableAi && options.aiEndpoint) {
+        try {
+            const aiFindings = await detectWithAi(
+                filePath,
+                code,
+                {
+                    endpoint: options.aiEndpoint,
+                    apiKey: options.aiApiKey,
+                    model: options.aiModel,
+                },
+                () => makeVulnId()
+            );
+            for (const v of aiFindings) {
+                const snippet = options.includeSnippets !== false ? v.location.snippet : undefined;
+                vulnerabilities.push({
+                    ...v,
+                    location: { ...v.location, file: filePath, snippet },
+                });
+            }
+        } catch (err: any) {
+            // Surface AI unavailability as an INFO vulnerability
+            console.warn(`[VibeGuard] AI detection failed for ${filePath}:`, err);
+            vulnerabilities.push({
+                id: makeVulnId(),
+                ruleId: 'VG-AI-ERROR',
+                ruleName: 'AI Subsystem Error',
+                severity: 'INFO',
+                message: `AI analysis skipped. Reason: ${err.message || 'Unknown error'}`,
+                description: 'The AI backend could not process this file. This can happen due to API rate limits (HTTP 429), timeouts, or if the file is too large.',
+                remediation: 'Check your API limits/keys, or try scanning this file again in a moment.',
+                location: { file: filePath, line: 1, column: 0 },
+            });
         }
     }
 

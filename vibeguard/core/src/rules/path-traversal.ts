@@ -31,7 +31,9 @@ const pathTraversalRule: Rule = {
     severity: 'HIGH',
     enabled: true,
     tags: ['path-traversal', 'lfi', 'file-system', 'owasp-a01'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             CallExpression(nodePath: NodePath<t.CallExpression>) {
                 const { callee, arguments: args } = nodePath.node;

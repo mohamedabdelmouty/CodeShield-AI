@@ -55,7 +55,8 @@ export interface Rule {
     severity: VulnerabilitySeverity;
     enabled: boolean;
     tags: string[];
-    check: (context: RuleContext, ast: import('@babel/types').File) => void;
+    type?: 'ast' | 'text';
+    check: (context: RuleContext, ast?: import('@babel/types').File | null) => void;
 }
 
 // ─── Scan Options ─────────────────────────────────────────────────────────────

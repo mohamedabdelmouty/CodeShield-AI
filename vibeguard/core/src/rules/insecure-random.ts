@@ -44,7 +44,9 @@ const insecureRandomRule: Rule = {
     severity: 'MEDIUM',
     enabled: true,
     tags: ['randomness', 'cryptography', 'weak-crypto', 'cwe-338'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             CallExpression(nodePath: NodePath<t.CallExpression>) {
                 const { callee } = nodePath.node;

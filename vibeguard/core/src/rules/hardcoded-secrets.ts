@@ -87,7 +87,9 @@ const hardcodedSecretsRule: Rule = {
     severity: 'CRITICAL',
     enabled: true,
     tags: ['secrets', 'credentials', 'configuration', 'owasp-a07'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             // Detect: const apiKey = "sk-abc123..."
             VariableDeclarator(nodePath: NodePath<t.VariableDeclarator>) {

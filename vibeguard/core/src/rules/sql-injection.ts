@@ -36,7 +36,9 @@ const sqlInjectionRule: Rule = {
     severity: 'CRITICAL',
     enabled: true,
     tags: ['injection', 'sql', 'database', 'owasp-a03'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             // Detect template literals with SQL keywords: `SELECT * FROM users WHERE id = ${userId}`
             TemplateLiteral(nodePath: NodePath<t.TemplateLiteral>) {

@@ -12,6 +12,7 @@ import hardcodedSecretsRule from './hardcoded-secrets';
 import evalRule from './eval-usage';
 import pathTraversalRule from './path-traversal';
 import insecureRandomRule from './insecure-random';
+import universalSecretsRule from './universal-secrets';
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ const RULE_REGISTRY: Rule[] = [
     evalRule,
     pathTraversalRule,
     insecureRandomRule,
+    universalSecretsRule,
 ];
 
 /**

@@ -25,7 +25,9 @@ const xssRule: Rule = {
     severity: 'HIGH',
     enabled: true,
     tags: ['xss', 'dom', 'injection', 'owasp-a03'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             // Detect: element.innerHTML = someVariable
             AssignmentExpression(nodePath: NodePath<t.AssignmentExpression>) {

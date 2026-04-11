@@ -28,7 +28,10 @@ import {
 
 export const VIBEGUARD_VERSION = '1.0.0';
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024; // 1 MB
-const SUPPORTED_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'];
+const SUPPORTED_EXTENSIONS = [
+    '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+    '.py', '.java', '.dart', '.html', '.php', '.go', '.rb', '.c', '.cpp', '.cs', '.sh', '.yaml', '.yml', '.json'
+];
 const DEFAULT_IGNORE_PATTERNS = [
     '**/node_modules/**',
     '**/dist/**',
@@ -125,9 +128,7 @@ async function scanFile(
     const vulnerabilities: Vulnerability[] = [];
 
     const ast = parseFileToAST(fileContent, filePath);
-    if (!ast) {
-        return { vulnerabilities: [], linesScanned: 0 };
-    }
+    // Even if AST is null, we continue to allow AI and text-based rules to run
 
     for (const rule of rules) {
         if (!rule.enabled) continue;
@@ -283,7 +284,7 @@ export function scanCode(
     const vulnerabilities: Vulnerability[] = [];
 
     const ast = parseFileToAST(code, filePath);
-    if (!ast) return [];
+    // Again, we do not return early so text-based rules can still run
 
     for (const rule of rulesToRun) {
         const context: RuleContext = {

@@ -17,7 +17,9 @@ const evalRule: Rule = {
     severity: 'HIGH',
     enabled: true,
     tags: ['eval', 'code-injection', 'rce', 'owasp-a03'],
-    check(context: RuleContext, ast: BabelFile): void {
+    type: 'ast',
+    check(context: RuleContext, ast?: BabelFile | null): void {
+        if (!ast) return;
         traverse(ast, {
             CallExpression(nodePath: NodePath<t.CallExpression>) {
                 const { callee, arguments: callArgs } = nodePath.node;

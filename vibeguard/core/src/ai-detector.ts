@@ -5,26 +5,28 @@
  * Use with enableAi + aiEndpoint + aiApiKey in scan options.
  */
 
-import type { Vulnerability, VulnerabilitySeverity } from './types';
+import type { Vulnerability } from './types';
 
 const MAX_CODE_CHARS = 12000; // ~3k tokens of code to stay within context
 
-const SYSTEM_PROMPT = `You are a security expert analyzing JavaScript/TypeScript code for vulnerabilities (e.g. injection, XSS, hardcoded secrets, insecure crypto, path traversal).
-Return a JSON array of findings. Each finding must have exactly:
-- "severity": one of "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"
-- "ruleId": string like "AI-SEC-001"
-- "title": short title
-- "message": description of the issue
-- "line": 1-based line number (number or null if unknown)
-- "remediation": how to fix it
-Return only the JSON array, no markdown or extra text. If no issues, return [].`;
+const SYSTEM_PROMPT = `You are a security expert. You will be given a code snippet and a list of identified vulnerabilities in that code.
+Your job is to provide exact remediation code (fixed code) for each vulnerability.
+Return a JSON array of findings corresponding to the passed vulnerabilities.
+Each finding MUST have exactly these keys:
+- "id": The EXACT vulnerability ID passed to you
+- "message": A deeper explanation of why this code is vulnerable
+- "remediation": A short explanation of how to fix it
+- "fixedCode": The exact corrected code snippet for the vulnerable lines (before/after fix comparison).
+Return ONLY the JSON array, no markdown or extra text.`;
 
-function buildUserPrompt(code: string, filePath: string): string {
+function buildUserPrompt(code: string, filePath: string, vulns: Vulnerability[]): string {
     const truncated =
         code.length > MAX_CODE_CHARS
             ? code.slice(0, MAX_CODE_CHARS) + '\n// ... (truncated)'
             : code;
-    return `Analyze this code for security vulnerabilities.\nFile: ${filePath}\n\n\`\`\`\n${truncated}\n\`\`\`\n\nReturn a JSON array of findings only.`;
+            
+    const vulnText = vulns.map(v => `- ID ${v.id}: ${v.ruleName} at line ${v.location.line}\n  Rule desc: ${v.description}`).join('\n');
+    return `File: ${filePath}\n\nIdentified Vulnerabilities:\n${vulnText}\n\n\`\`\`\n${truncated}\n\`\`\`\n\nReturn JSON array only.`;
 }
 
 export interface AIDetectorOptions {
@@ -34,15 +36,12 @@ export interface AIDetectorOptions {
 }
 
 interface RawFinding {
-    severity?: string;
-    ruleId?: string;
-    title?: string;
+    id?: string;
     message?: string;
-    line?: number | null;
     remediation?: string;
+    fixedCode?: string;
 }
 
-const VALID_SEVERITIES: VulnerabilitySeverity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
 
 function parseFindings(jsonStr: string): RawFinding[] {
     try {
@@ -57,42 +56,17 @@ function parseFindings(jsonStr: string): RawFinding[] {
     }
 }
 
-function toVulnerability(
-    raw: RawFinding,
-    filePath: string,
-    id: string,
-    snippet?: string
-): Vulnerability {
-    const severity = raw.severity && VALID_SEVERITIES.includes(raw.severity as VulnerabilitySeverity)
-        ? (raw.severity as VulnerabilitySeverity)
-        : 'MEDIUM';
-    const line = typeof raw.line === 'number' && raw.line >= 1 ? raw.line : 1;
-    return {
-        id,
-        ruleId: raw.ruleId ?? 'AI-SEC',
-        ruleName: raw.title ?? 'AI-detected issue',
-        severity,
-        message: raw.message ?? '',
-        description: raw.message ?? '',
-        remediation: raw.remediation ?? 'Review and fix.',
-        location: {
-            file: filePath,
-            line,
-            column: 0,
-            snippet: snippet ?? undefined,
-        },
-        aiReadyContext: { source: 'ai' },
-    };
-}
 
-export async function detectWithAi(
+export async function enrichWithAi(
     filePath: string,
     code: string,
-    options: AIDetectorOptions,
-    makeId: () => string
+    vulnerabilities: Vulnerability[],
+    options: AIDetectorOptions
 ): Promise<Vulnerability[]> {
+    if (vulnerabilities.length === 0) return [];
+    
     const { endpoint, apiKey, model = 'gpt-4o-mini' } = options;
-    const userPrompt = buildUserPrompt(code, filePath);
+    const userPrompt = buildUserPrompt(code, filePath, vulnerabilities);
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -122,16 +96,21 @@ export async function detectWithAi(
 
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = data.choices?.[0]?.message?.content ?? '';
-    if (!content.trim()) return [];
+    if (!content.trim()) return vulnerabilities;
 
     const rawFindings = parseFindings(content);
-    const lines = code.split('\n');
-
-    return rawFindings.map((raw) => {
-        const line = typeof raw.line === 'number' && raw.line >= 1 ? raw.line : 1;
-        const start = Math.max(0, line - 2);
-        const end = Math.min(lines.length, line + 1);
-        const snippet = lines.slice(start, end).join('\n');
-        return toVulnerability(raw, filePath, makeId(), snippet);
+    
+    // Merge AI findings with the original static ones
+    return vulnerabilities.map(vuln => {
+        const enriched = rawFindings.find(r => r.id === vuln.id);
+        if (!enriched) return vuln;
+        
+        return {
+            ...vuln,
+            message: enriched.message || vuln.message,
+            remediation: enriched.remediation || vuln.remediation,
+            remediationCode: enriched.fixedCode || vuln.remediationCode,
+            aiReadyContext: { source: 'ai-enriched' }
+        };
     });
 }

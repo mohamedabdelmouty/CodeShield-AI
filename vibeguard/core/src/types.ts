@@ -34,6 +34,7 @@ export interface Vulnerability {
     message: string;
     description: string;
     remediation: string;
+    remediationCode?: string; // Added for before/after fix comparison
     location: VulnerabilityLocation;
     cweId?: string;
     owaspCategory?: string;

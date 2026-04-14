@@ -13,6 +13,9 @@ import evalRule from './eval-usage';
 import pathTraversalRule from './path-traversal';
 import insecureRandomRule from './insecure-random';
 import universalSecretsRule from './universal-secrets';
+import pythonRules from './python-rules';
+import javaRules from './java-rules';
+import multiLangRules from './multi-lang-rules';
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +27,9 @@ const RULE_REGISTRY: Rule[] = [
     pathTraversalRule,
     insecureRandomRule,
     universalSecretsRule,
+    ...pythonRules,
+    ...javaRules,
+    ...multiLangRules,
 ];
 
 /**

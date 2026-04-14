@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time security vulnerability detection for JS/TS — SQL Injection, XSS, Hardcoded Secrets, and more.",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "publisher": "vibeguardapp",
     "galleryBanner": {
         "color": "#0f0f1a",

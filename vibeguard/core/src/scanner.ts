@@ -11,7 +11,7 @@ import { glob } from 'glob';
 import { parse } from '@babel/parser';
 import traverse from '@babel/traverse';
 import type { File as BabelFile } from '@babel/types';
-import { detectWithAi } from './ai-detector';
+import { enrichWithAi } from './ai-detector';
 import { getAllRules } from './rules';
 import { calculateSecurityScore } from './score';
 import {
@@ -26,7 +26,7 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const VIBEGUARD_VERSION = '1.0.0';
+export const VIBEGUARD_VERSION = '1.2.0';
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 const SUPPORTED_EXTENSIONS = [
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
@@ -161,39 +161,25 @@ async function scanFile(
         }
     }
 
-    // AI-powered detection (optional)
-    if (options.enableAi && options.aiEndpoint) {
+    // AI-powered enrichment (only if static rules found issues, to save tokens)
+    if (options.enableAi && options.aiEndpoint && vulnerabilities.length > 0) {
         try {
-            const aiFindings = await detectWithAi(
+            const aiFindings = await enrichWithAi(
                 filePath,
                 fileContent,
+                vulnerabilities,
                 {
                     endpoint: options.aiEndpoint,
                     apiKey: options.aiApiKey,
                     model: options.aiModel,
-                },
-                () => makeVulnId()
+                }
             );
-            for (const v of aiFindings) {
-                const snippet = options.includeSnippets !== false ? v.location.snippet : undefined;
-                vulnerabilities.push({
-                    ...v,
-                    location: { ...v.location, file: filePath, snippet },
-                });
-            }
+            // Replace static findings with AI enriched ones
+            vulnerabilities.length = 0;
+            vulnerabilities.push(...aiFindings);
         } catch (err: any) {
-            // Surface AI unavailability as an INFO vulnerability
-            console.warn(`[VibeGuard] AI detection failed for ${filePath}:`, err);
-            vulnerabilities.push({
-                id: makeVulnId(),
-                ruleId: 'VG-AI-ERROR',
-                ruleName: 'AI Subsystem Error',
-                severity: 'INFO',
-                message: `AI analysis skipped. Reason: ${err.message || 'Unknown error'}`,
-                description: 'The AI backend could not process this file. This can happen due to API rate limits (HTTP 429), timeouts, or if the file is too large.',
-                remediation: 'Check your API limits/keys, or try scanning individual files with delays.',
-                location: { file: filePath, line: 1, column: 0 },
-            });
+            // Keep the static vulnerabilities, just log the AI warning
+            console.warn(`[VibeGuard] AI enrichment failed for ${filePath}:`, err);
         }
     }
 
@@ -321,39 +307,23 @@ export async function scanCode(
         }
     }
 
-    // AI-powered detection (optional)
-    if (options?.enableAi && options.aiEndpoint) {
+    // AI-powered enrichment (only if static rules found issues, to save tokens)
+    if (options?.enableAi && options.aiEndpoint && vulnerabilities.length > 0) {
         try {
-            const aiFindings = await detectWithAi(
+            const aiFindings = await enrichWithAi(
                 filePath,
                 code,
+                vulnerabilities,
                 {
                     endpoint: options.aiEndpoint,
                     apiKey: options.aiApiKey,
                     model: options.aiModel,
-                },
-                () => makeVulnId()
+                }
             );
-            for (const v of aiFindings) {
-                const snippet = options.includeSnippets !== false ? v.location.snippet : undefined;
-                vulnerabilities.push({
-                    ...v,
-                    location: { ...v.location, file: filePath, snippet },
-                });
-            }
+            vulnerabilities.length = 0;
+            vulnerabilities.push(...aiFindings);
         } catch (err: any) {
-            // Surface AI unavailability as an INFO vulnerability
-            console.warn(`[VibeGuard] AI detection failed for ${filePath}:`, err);
-            vulnerabilities.push({
-                id: makeVulnId(),
-                ruleId: 'VG-AI-ERROR',
-                ruleName: 'AI Subsystem Error',
-                severity: 'INFO',
-                message: `AI analysis skipped. Reason: ${err.message || 'Unknown error'}`,
-                description: 'The AI backend could not process this file. This can happen due to API rate limits (HTTP 429), timeouts, or if the file is too large.',
-                remediation: 'Check your API limits/keys, or try scanning this file again in a moment.',
-                location: { file: filePath, line: 1, column: 0 },
-            });
+            console.warn(`[VibeGuard] AI enrichment failed for ${filePath}:`, err);
         }
     }
 

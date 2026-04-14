@@ -26,7 +26,7 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const VIBEGUARD_VERSION = '1.2.0';
+export const VIBEGUARD_VERSION = '1.3.0';
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 const SUPPORTED_EXTENSIONS = [
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',

@@ -16,6 +16,7 @@ import universalSecretsRule from './universal-secrets';
 import pythonRules from './python-rules';
 import javaRules from './java-rules';
 import multiLangRules from './multi-lang-rules';
+import dartRules from './dart-rules';
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ const RULE_REGISTRY: Rule[] = [
     ...pythonRules,
     ...javaRules,
     ...multiLangRules,
+    ...dartRules,
 ];
 
 /**

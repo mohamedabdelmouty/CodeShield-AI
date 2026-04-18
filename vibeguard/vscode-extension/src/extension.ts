@@ -12,6 +12,8 @@ import { VibeguardCodeLensProvider } from './codelens';
 import { VibeguardPanel } from './panel';
 import { exportToPdf, exportToPdfToPath } from './pdf-exporter';
 import { scan, scanCode, getAllRules, VIBEGUARD_VERSION } from '@vibeguard/core';
+import { VibeguardCodeActionProvider } from './code-actions';
+import { VibeguardChatProvider } from './chat-panel';
 
 // ─── Supported Language IDs ───────────────────────────────────────────────────
 
@@ -67,6 +69,28 @@ export function activate(context: vscode.ExtensionContext): void {
         codeLensProvider
     );
     context.subscriptions.push(codeLensDisposable);
+
+    // ── Register Code Action Provider (AI Auto-Fix) ────────────────
+    const codeActionProvider = new VibeguardCodeActionProvider(diagnosticsProvider);
+    const codeActionDisposable = vscode.languages.registerCodeActionsProvider(
+        SUPPORTED_LANGUAGES.map((lang) => ({ language: lang })),
+        codeActionProvider,
+        { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    );
+    context.subscriptions.push(codeActionDisposable);
+
+    // ── Register Chat Provider ──────────────────────────────────────
+    const chatProvider = new VibeguardChatProvider(context.extensionUri);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(VibeguardChatProvider.viewType, chatProvider)
+    );
+
+    // Command to open chat
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vibeguard.askAi', (vuln: any) => {
+            chatProvider.sendToChat(vuln);
+        })
+    );
 
     // ── Register Commands ─────────────────────────────────────────
 

@@ -14,6 +14,7 @@ import type { File as BabelFile } from '@babel/types';
 import { enrichWithAi } from './ai-detector';
 import { getAllRules } from './rules';
 import { calculateSecurityScore } from './score';
+import { runScaScan } from './sca-engine';
 import {
     Rule,
     RuleContext,
@@ -26,12 +27,14 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const VIBEGUARD_VERSION = '1.3.0';
+export const VIBEGUARD_VERSION = '1.4.0';
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 const SUPPORTED_EXTENSIONS = [
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
-    '.py', '.java', '.dart', '.html', '.php', '.go', '.rb', '.c', '.cpp', '.cs', '.sh', '.yaml', '.yml', '.json'
+    '.py', '.java', '.dart', '.html', '.php', '.go', '.rb', '.c', '.cpp', '.cs', '.sh', '.yaml', '.yml', '.json',
+    '.tf'
 ];
+const DOCKERFILE_PATTERN = '**/Dockerfile*'; // Matches Dockerfile, Dockerfile.prod, etc.
 const DEFAULT_IGNORE_PATTERNS = [
     '**/node_modules/**',
     '**/dist/**',
@@ -85,6 +88,7 @@ async function discoverFiles(target: string, ignore: string[]): Promise<string[]
     }
 
     const patterns = SUPPORTED_EXTENSIONS.map((ext) => `**/*${ext}`);
+    patterns.push(DOCKERFILE_PATTERN);
     const allIgnore = [...DEFAULT_IGNORE_PATTERNS, ...ignore];
     const files: string[] = [];
 
@@ -230,6 +234,22 @@ export async function scan(options: ScanOptions): Promise<SecurityReport> {
             totalLinesScanned += linesScanned;
         } catch {
             skipped++;
+        }
+    }
+
+    // ── SCA Scan (Dependency Vulnerability Scanning) ──────────────────────────
+    if (options.enableSca !== false) {
+        // Only run if target is a directory (not a single file)
+        try {
+            const stat = fs.statSync(path.resolve(options.target));
+            if (stat.isDirectory()) {
+                const scaResults = await runScaScan(options.target);
+                for (const result of scaResults) {
+                    allVulnerabilities.push(...result.vulnerabilities);
+                }
+            }
+        } catch {
+            // SCA failure should not crash the whole scan
         }
     }
 

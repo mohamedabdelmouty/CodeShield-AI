@@ -75,6 +75,8 @@ export interface ScanOptions {
     maxFileSize?: number;
     /** Enable AI-powered detection (requires aiEndpoint) */
     enableAi?: boolean;
+    /** Enable SCA (Software Composition Analysis) to scan package.json for vulnerable deps (default: true) */
+    enableSca?: boolean;
     /** OpenAI-compatible API endpoint (e.g. https://api.openai.com/v1/chat/completions) */
     aiEndpoint?: string;
     /** API key for AI endpoint (Bearer token) */

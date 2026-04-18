@@ -1,0 +1,53 @@
+name: "VibeGuard Security Scanner"
+description: "Scans your codebase for security vulnerabilities using VibeGuard."
+inputs:
+  target:
+    description: "Directory or file to scan"
+    required: false
+    default: "."
+  threshold:
+    description: "Minimum passing security score (0-100)"
+    required: false
+    default: "70"
+  ignore:
+    description: "Comma-separated glob patterns to ignore"
+    required: false
+    default: ""
+  enable-ai:
+    description: "Enable AI-powered vulnerability detection"
+    required: false
+    default: "false"
+  ai-model:
+    description: "AI model name"
+    required: false
+    default: "gemini-2.0-flash"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install VibeGuard CLI
+      run: npm install -g @vibeguard/cli
+      shell: bash
+
+    - name: Run VibeGuard Scan
+      env:
+        GEMINI_API_KEY: ${{ inputs.enable-ai == 'true' && env.GEMINI_API_KEY || '' }}
+      run: |
+        CMD="vibeguard scan ${{ inputs.target }} -t ${{ inputs.threshold }}"
+        
+        if [ -n "${{ inputs.ignore }}" ]; then
+          CMD="$CMD -i ${{ inputs.ignore }}"
+        fi
+
+        if [ "${{ inputs.enable-ai }}" == "true" ]; then
+          CMD="$CMD --ai --ai-model ${{ inputs.ai-model }}"
+        fi
+
+        echo "Running: $CMD"
+        $CMD
+      shell: bash

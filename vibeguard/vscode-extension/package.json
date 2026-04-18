@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time security vulnerability detection for JS/TS — SQL Injection, XSS, Hardcoded Secrets, and more.",
-    "version": "1.3.1",
+    "version": "1.4.0",
     "publisher": "vibeguardapp",
     "galleryBanner": {
         "color": "#0f0f1a",
@@ -29,6 +29,25 @@
     ],
     "main": "./dist/extension.js",
     "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "vibeguard-sidebar",
+                    "title": "VibeGuard",
+                    "icon": "$(shield)"
+                }
+            ]
+        },
+        "views": {
+            "vibeguard-sidebar": [
+                {
+                    "type": "webview",
+                    "id": "vibeguard.chatView",
+                    "name": "VibeGuard AI Chat",
+                    "icon": "$(comment-discussion)"
+                }
+            ]
+        },
         "commands": [
             {
                 "command": "vibeguard.scanWorkspace",
@@ -207,7 +226,7 @@
         "@types/jspdf": "^1.3.3",
         "@types/node": "^20.12.7",
         "@types/vscode": "^1.85.0",
-        "@vibeguard/core": "^1.3.0",
+        "@vibeguard/core": "^1.4.0",
         "@vscode/vsce": "^2.24.0",
         "dotenv": "^17.4.1",
         "esbuild": "^0.28.0",

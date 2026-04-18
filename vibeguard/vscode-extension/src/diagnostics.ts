@@ -97,6 +97,7 @@ export class VibeguardDiagnosticsProvider {
 
         // Set diagnostics per file
         for (const [filePath, vulns] of byFile) {
+            this._fileDiagnostics.set(filePath, vulns);
             const uri = vscode.Uri.file(filePath);
             const diagnostics: vscode.Diagnostic[] = vulns.map((vuln) => {
                 const loc = vuln.location;

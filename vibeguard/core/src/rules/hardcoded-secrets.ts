@@ -9,6 +9,7 @@ import { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import { Rule, RuleContext } from '../types';
 import { BabelFile, traverse } from '../scanner';
+import { isHighEntropySecret } from '../language-utils';
 
 // Variable/property names that suggest a secret
 const SECRET_KEY_PATTERNS = [
@@ -66,7 +67,18 @@ function isLikelyRealSecret(value: string): boolean {
     for (const placeholder of PLACEHOLDER_VALUES) {
         if (lower === placeholder.toLowerCase()) return false;
     }
-    return SECRET_VALUE_PATTERNS.some((p) => p.test(value));
+    // First check: does it match a known secret pattern?
+    const matchesPattern = SECRET_VALUE_PATTERNS.some((p) => p.test(value));
+    if (!matchesPattern) return false;
+
+    // Second check (new): High entropy validation to filter out placeholders
+    // e.g. 'changethis12345' has low entropy → skip
+    // e.g. 'sk-xGh7Bz3Kq9mNpRt' has high entropy → flag
+    if (value.length >= 16) {
+        return isHighEntropySecret(value);
+    }
+
+    return true;
 }
 
 function isSecretKeyName(name: string): boolean {

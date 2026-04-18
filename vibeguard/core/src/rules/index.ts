@@ -17,6 +17,8 @@ import pythonRules from './python-rules';
 import javaRules from './java-rules';
 import multiLangRules from './multi-lang-rules';
 import dartRules from './dart-rules';
+import dockerRules from './docker-rules';
+import terraformRules from './terraform-rules';
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,8 @@ const RULE_REGISTRY: Rule[] = [
     ...javaRules,
     ...multiLangRules,
     ...dartRules,
+    ...dockerRules,
+    ...terraformRules,
 ];
 
 /**

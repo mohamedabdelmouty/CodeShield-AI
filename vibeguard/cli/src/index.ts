@@ -146,6 +146,7 @@ program
     .option('--ai-endpoint <url>', 'AI API endpoint', process.env.VIBEGUARD_AI_ENDPOINT ?? GEMINI_ENDPOINT)
     .option('--ai-key <key>', 'AI API key (or set GEMINI_API_KEY / VIBEGUARD_AI_API_KEY)', process.env.GEMINI_API_KEY ?? process.env.VIBEGUARD_AI_API_KEY)
     .option('--ai-model <model>', 'AI model name (default: gemini-2.0-flash)', process.env.VIBEGUARD_AI_MODEL ?? 'gemini-2.0-flash')
+    .option('--no-sca', 'Disable SCA dependency scanning (OSV.dev lookup)')
     .action(async (target: string | undefined, options: {
         format: string;
         output?: string;
@@ -160,6 +161,7 @@ program
         aiEndpoint?: string;
         aiKey?: string;
         aiModel?: string;
+        sca?: boolean;
     }) => {
         const chalk = await getChalk();
         const ora = await getOra();
@@ -206,6 +208,7 @@ program
                 includeSnippets: options.snippets,
                 maxFileSize,
                 enableAi,
+                enableSca: options.sca !== false, // --no-sca disables it
                 aiEndpoint: aiEndpoint || undefined,
                 aiApiKey: aiApiKey || undefined,
                 aiModel: aiModel,
@@ -358,6 +361,39 @@ program
         fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
         console.log(chalk.green(`\n✅ Created vibeguard.config.json in ${process.cwd()}`));
         console.log(chalk.gray('   Edit this file to customize rules, thresholds, and ignore patterns.\n'));
+    });
+
+// ─── INSTALL-HOOK Command ─────────────────────────────────────────────────────────────
+
+program
+    .command('install-hook')
+    .description('Install a pre-commit git hook to run VibeGuard before committing')
+    .action(async () => {
+        const chalk = await getChalk();
+        const gitHooksDir = path.resolve(process.cwd(), '.git', 'hooks');
+        const preCommitPath = path.join(gitHooksDir, 'pre-commit');
+
+        if (!fs.existsSync(gitHooksDir)) {
+            console.error(chalk.red('\n❌ Error: Not a git repository (could not find .git/hooks directory).'));
+            process.exit(1);
+        }
+
+        const hookScript = `#!/bin/sh
+# VibeGuard pre-commit hook
+echo "🛡️  VibeGuard: Scanning for vulnerabilities before commit..."
+
+# Scan the workspace, require score 70
+npx vibeguard scan . -t 70
+if [ $? -ne 0 ]; then
+    echo "❌ VibeGuard: Vulnerabilities found. Please fix them before committing."
+    exit 1
+fi
+echo "✅ VibeGuard: Scan passed."
+exit 0
+`;
+
+        fs.writeFileSync(preCommitPath, hookScript, { encoding: 'utf-8', mode: 0o755 });
+        console.log(chalk.green(`\n✅ Installed VibeGuard pre-commit hook at ${preCommitPath}`));
     });
 
 // ─── Parse ────────────────────────────────────────────────────────────────────

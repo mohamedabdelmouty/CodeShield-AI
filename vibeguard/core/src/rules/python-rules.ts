@@ -1,12 +1,18 @@
 /**
- * VibeGuard Rules — Python Security Rules
+ * VibeGuard Rules — Python Security Rules (v2)
  *
- * Text-based rules for Python files (.py).
+ * Context-aware rules for Python files (.py).
+ * Uses comment-stripping to eliminate false positives from:
+ *   - Commented-out code (# eval(user_input))
+ *   - Docstrings describing vulnerabilities
+ *   - String literals that mention dangerous functions
+ *
  * Covers: eval/exec injection, command injection, pickle deserialization,
  * hardcoded secrets, insecure random, SQL injection patterns, XML vulnerabilities.
  */
 
 import { Rule, RuleContext } from '../types';
+import { scanExecutableLines } from '../language-utils';
 
 const PY_EXT = /\.py$/i;
 
@@ -14,22 +20,18 @@ function isPython(filePath: string): boolean {
     return PY_EXT.test(filePath);
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Helper: scan only real code lines ───────────────────────────────────────
 
-function scanLines(
+function scanPython(
     context: RuleContext,
     pattern: RegExp,
     report: (line: string, lineNum: number, match: RegExpMatchArray) => Parameters<RuleContext['reportVulnerability']>[0]
 ): void {
     if (!isPython(context.filePath)) return;
-    const lines = context.fileContent.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const match = line.match(pattern);
-        if (match) {
-            const vuln = report(line, i + 1, match);
-            context.reportVulnerability(vuln);
-        }
+
+    const matches = scanExecutableLines(context.fileContent, pattern, 'hash');
+    for (const { lineNum, lineContent, match } of matches) {
+        context.reportVulnerability(report(lineContent, lineNum, match));
     }
 }
 
@@ -38,13 +40,13 @@ function scanLines(
 const pythonEvalRule: Rule = {
     id: 'PY-001',
     name: 'Python eval/exec Injection',
-    description: 'Detects use of eval() or exec() with non-literal expressions in Python.',
+    description: 'Detects use of eval() or exec() with non-literal expressions in Python code (not comments).',
     severity: 'CRITICAL',
     enabled: true,
     tags: ['injection', 'python', 'code-execution'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(context, /\b(eval|exec)\s*\((?!['"][^'"]*['"]\s*\))/, (_line, lineNum) => ({
+        scanPython(context, /\b(eval|exec)\s*\((?!['"][^'"]*['"]\s*\))/, (_line, lineNum) => ({
             ruleId: 'PY-001',
             ruleName: 'Python eval/exec Injection',
             severity: 'CRITICAL',
@@ -61,13 +63,13 @@ const pythonEvalRule: Rule = {
 const pythonCommandInjectionRule: Rule = {
     id: 'PY-002',
     name: 'Python Command Injection',
-    description: 'Detects os.system, subprocess calls with shell=True or string formatting.',
+    description: 'Detects os.system or subprocess calls with shell=True in executable Python code.',
     severity: 'CRITICAL',
     enabled: true,
     tags: ['injection', 'python', 'command-injection', 'owasp-a03'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(context, /\bos\s*\.\s*system\s*\(|\bsubprocess\s*\.\s*(call|run|Popen)\s*\(.*shell\s*=\s*True/, (_line, lineNum) => ({
+        scanPython(context, /\bos\s*\.\s*system\s*\(|\bsubprocess\s*\.\s*(call|run|Popen)\s*\(.*shell\s*=\s*True/, (_line, lineNum) => ({
             ruleId: 'PY-002',
             ruleName: 'Python Command Injection',
             severity: 'CRITICAL',
@@ -84,18 +86,18 @@ const pythonCommandInjectionRule: Rule = {
 const pythonPickleRule: Rule = {
     id: 'PY-003',
     name: 'Python Insecure Deserialization (pickle)',
-    description: 'Detects use of pickle.loads() or pickle.load() which can execute arbitrary code.',
+    description: 'Detects use of pickle.loads() or pickle.load() in real executable code.',
     severity: 'HIGH',
     enabled: true,
     tags: ['deserialization', 'python', 'owasp-a08'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(context, /\bpickle\s*\.\s*loads?\s*\(/, (_line, lineNum) => ({
+        scanPython(context, /\bpickle\s*\.\s*loads?\s*\(/, (_line, lineNum) => ({
             ruleId: 'PY-003',
             ruleName: 'Python Insecure Deserialization (pickle)',
             severity: 'HIGH',
             message: `pickle.load/loads() at line ${lineNum} — deserializing untrusted data can execute arbitrary code.`,
-            description: 'Python\'s pickle module can execute arbitrary code during deserialization. Never unpickle data from untrusted sources.',
+            description: "Python's pickle module can execute arbitrary code during deserialization. Never unpickle data from untrusted sources.",
             remediation: 'Use JSON, MessagePack, or other safe serialization formats. If pickle is required, use HMAC signatures to verify data integrity before deserializing.',
             cweId: 'CWE-502',
             owaspCategory: 'A08:2021 – Software and Data Integrity Failures',
@@ -107,15 +109,15 @@ const pythonPickleRule: Rule = {
 const pythonSqlInjectionRule: Rule = {
     id: 'PY-004',
     name: 'Python SQL Injection',
-    description: 'Detects SQL queries built with string formatting/concatenation in Python.',
+    description: 'Detects SQL queries built with string formatting/concatenation in executable Python code.',
     severity: 'CRITICAL',
     enabled: true,
     tags: ['injection', 'sql', 'python', 'owasp-a03'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(
+        scanPython(
             context,
-            /(?:query|sql|cursor\.execute)\s*(?:=|\()\s*(?:f['"]|['"][^'"]*['"\s]*%\s*\(|['"][^'"]*['"\s]*\.format\s*\(|[^'"]*\+\s*(?:user|input|request|param|id|name))/i,
+            /(?:query|sql|cursor\.execute)\s*(?:=|\()\s*(?:f['"]|['"][^'"]*['"\\s]*%\s*\(|['"][^'"]*['"\\s]*\.format\s*\(|[^'"]*\+\s*(?:user|input|request|param|id|name))/i,
             (_line, lineNum) => ({
                 ruleId: 'PY-004',
                 ruleName: 'Python SQL Injection',
@@ -140,7 +142,7 @@ const pythonHardcodedSecretRule: Rule = {
     tags: ['secrets', 'python', 'credentials', 'owasp-a02'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(
+        scanPython(
             context,
             /(?:password|passwd|secret|api_key|apikey|token|auth_token|private_key)\s*=\s*['"][^'"]{4,}['"]/i,
             (_line, lineNum) => ({
@@ -167,7 +169,7 @@ const pythonXmlRule: Rule = {
     tags: ['xxe', 'python', 'xml', 'owasp-a05'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(
+        scanPython(
             context,
             /\b(?:xml\.etree|minidom|expat|lxml\.etree).*parse\b|\bElementTree\s*\(\s*file/i,
             (_line, lineNum) => ({
@@ -188,13 +190,13 @@ const pythonXmlRule: Rule = {
 const pythonInsecureRandomRule: Rule = {
     id: 'PY-007',
     name: 'Python Insecure Random',
-    description: 'Detects use of the random module for security-sensitive operations.',
+    description: 'Detects use of the random module for security-sensitive operations in real code.',
     severity: 'MEDIUM',
     enabled: true,
     tags: ['cryptography', 'python', 'random'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(
+        scanPython(
             context,
             /\brandom\s*\.\s*(?:random|randint|choice|shuffle|sample|seed)\s*\(/,
             (_line, lineNum) => ({
@@ -221,7 +223,7 @@ const pythonOpenRedirectRule: Rule = {
     tags: ['redirect', 'python', 'web', 'owasp-a01'],
     type: 'text',
     check(context: RuleContext): void {
-        scanLines(
+        scanPython(
             context,
             /redirect\s*\(\s*request\s*\.\s*(?:args|form|get)\s*\[/i,
             (_line, lineNum) => ({

@@ -16,6 +16,14 @@ export { generateTerminalReport, generateJsonReport, generateHtmlReport } from '
 // Rule registry
 export { getAllRules, getRuleById, getRulesByTag, getRulesSummary } from './rules';
 
+// SCA Engine (Dependency Scanning)
+export { runScaScan } from './sca-engine';
+export type { ScaResult } from './sca-engine';
+
+// Language utilities (entropy, comment-stripping)
+export { shannonEntropy, isHighEntropySecret, scanExecutableLines, getExecutableLines } from './language-utils';
+
+
 // Types (re-exported for consumers)
 export type {
     Vulnerability,

@@ -15,8 +15,11 @@ import { scan, scanCode, getAllRules, VIBEGUARD_VERSION } from '@vibeguard/core'
 
 // ─── Supported Language IDs ───────────────────────────────────────────────────
 
-const SUPPORTED_LANGUAGES = ['javascript', 'typescript', 'javascriptreact', 'typescriptreact'];
-const SUPPORTED_EXTENSIONS = /\.(js|ts|jsx|tsx|mjs|cjs)$/;
+const SUPPORTED_LANGUAGES = [
+    'javascript', 'typescript', 'javascriptreact', 'typescriptreact',
+    'python', 'java', 'dart', 'html', 'php', 'go', 'ruby', 'c', 'cpp', 'csharp', 'shellscript', 'yaml', 'json'
+];
+const SUPPORTED_EXTENSIONS = /\.(js|ts|jsx|tsx|mjs|cjs|py|java|dart|html|php|go|rb|c|cpp|cs|sh|yaml|yml|json)$/i;
 
 // ─── Built-in Gemini AI Config ────────────────────────────────────────────────
 // Embedded key is injected by build.js using esbuild at BUILD TIME.

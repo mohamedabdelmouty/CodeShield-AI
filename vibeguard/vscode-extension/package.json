@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time security vulnerability detection for JS/TS — SQL Injection, XSS, Hardcoded Secrets, and more.",
-    "version": "1.4.1",
+    "version": "2.0.0",
     "publisher": "vibeguardapp",
     "galleryBanner": {
         "color": "#0f0f1a",
@@ -78,6 +78,16 @@
                 "command": "vibeguard.scanInSystemTerminal",
                 "title": "VibeGuard: Scan in System Terminal",
                 "icon": "$(terminal)"
+            },
+            {
+                "command": "vibeguard.installPreCommitHook",
+                "title": "VibeGuard: Install Pre-commit Security Hook",
+                "icon": "$(git-commit)"
+            },
+            {
+                "command": "vibeguard.showHistory",
+                "title": "VibeGuard: Show Scan History",
+                "icon": "$(history)"
             }
         ],
         "menus": {
@@ -117,6 +127,12 @@
                 },
                 {
                     "command": "vibeguard.scanInSystemTerminal"
+                },
+                {
+                    "command": "vibeguard.installPreCommitHook"
+                },
+                {
+                    "command": "vibeguard.showHistory"
                 }
             ]
         },

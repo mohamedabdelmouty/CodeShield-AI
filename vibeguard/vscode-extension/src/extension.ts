@@ -14,6 +14,7 @@ import { exportToPdf, exportToPdfToPath } from './pdf-exporter';
 import { scan, scanCode, getAllRules, VIBEGUARD_VERSION } from '@vibeguard/core';
 import { VibeguardCodeActionProvider } from './code-actions';
 import { VibeguardChatProvider } from './chat-panel';
+import { VulnerabilityHistoryProvider } from './history-provider';
 
 // ─── Supported Language IDs ───────────────────────────────────────────────────
 
@@ -44,12 +45,14 @@ function getAiConfig(): { enabled: boolean; endpoint: string; apiKey: string; mo
 let diagnosticsProvider: VibeguardDiagnosticsProvider;
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
+let historyProvider: VulnerabilityHistoryProvider;
 
 // ─── Activation ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext): void {
     outputChannel = vscode.window.createOutputChannel('VibeGuard');
     outputChannel.appendLine(`[VibeGuard v${VIBEGUARD_VERSION}] Extension activated.`);
+    historyProvider = new VulnerabilityHistoryProvider(context);
 
     // Initialize providers
     diagnosticsProvider = new VibeguardDiagnosticsProvider();
@@ -150,6 +153,18 @@ export function activate(context: vscode.ExtensionContext): void {
                             diagnosticsProvider.setWorkspaceReport(report);
                             updateStatusBar(report.score.score, report.score.grade);
                             outputChannel.appendLine(`[VibeGuard] Workspace scan: Score ${report.score.score}/100 (${report.score.grade}). Vulnerabilities: ${report.vulnerabilities.length}`);
+                            // Record in history
+                            historyProvider.addEntry({
+                                timestamp: new Date().toISOString(),
+                                target: folder.uri.fsPath,
+                                score: report.score.score,
+                                grade: report.score.grade,
+                                issueCount: report.vulnerabilities.length,
+                                critical: report.summary['CRITICAL'] ?? 0,
+                                high: report.summary['HIGH'] ?? 0,
+                                medium: report.summary['MEDIUM'] ?? 0,
+                                low: report.summary['LOW'] ?? 0,
+                            });
 
                             const pdfDir = folder.uri.fsPath;
                             const pdfPath = `${pdfDir}/vibeguard-report-${Date.now()}.pdf`;
@@ -201,6 +216,66 @@ export function activate(context: vscode.ExtensionContext): void {
             statusBarItem.text = '$(shield) VibeGuard';
             statusBarItem.backgroundColor = undefined;
             vscode.window.showInformationMessage('VibeGuard: Diagnostics cleared.');
+        })
+    );
+
+    // ── Pre-commit Hook ───────────────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vibeguard.installPreCommitHook', async () => {
+            const folders = vscode.workspace.workspaceFolders;
+            if (!folders || folders.length === 0) {
+                vscode.window.showWarningMessage('VibeGuard: No workspace folder open.');
+                return;
+            }
+            const folderPath = folders[0].uri.fsPath;
+            const hookDir = `${folderPath}/.git/hooks`;
+            const hookPath = `${hookDir}/pre-commit`;
+            const fs = await import('fs');
+            const path = await import('path');
+
+            if (!fs.existsSync(path.join(folderPath, '.git'))) {
+                vscode.window.showErrorMessage('VibeGuard: Not a git repository.');
+                return;
+            }
+
+            const hookContent = `#!/bin/sh
+# VibeGuard Pre-commit Security Hook
+echo "🛡️ VibeGuard: Running security scan before commit..."
+npx vibeguard scan . --threshold 70
+if [ $? -ne 0 ]; then
+  echo "❌ VibeGuard: Security check failed. Fix critical/high vulnerabilities before committing."
+  exit 1
+fi
+echo "✅ VibeGuard: Security check passed."
+`;
+            try {
+                if (!fs.existsSync(hookDir)) { fs.mkdirSync(hookDir, { recursive: true }); }
+                fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
+                vscode.window.showInformationMessage(`✅ VibeGuard: Pre-commit hook installed at ${hookPath}. Commits will be blocked if critical vulnerabilities are found.`);
+                outputChannel.appendLine(`[VibeGuard] Pre-commit hook installed: ${hookPath}`);
+            } catch (err) {
+                vscode.window.showErrorMessage(`VibeGuard: Failed to install hook — ${err}`);
+            }
+        })
+    );
+
+    // ── Show Vulnerability History ────────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vibeguard.showHistory', () => {
+            const panel = vscode.window.createWebviewPanel(
+                'vibeguardHistory',
+                '🛡️ VibeGuard Scan History',
+                vscode.ViewColumn.One,
+                { enableScripts: true, retainContextWhenHidden: true }
+            );
+            panel.webview.html = historyProvider.getHistoryHtml();
+            panel.webview.onDidReceiveMessage(msg => {
+                if (msg.command === 'clearHistory') {
+                    historyProvider.clearHistory();
+                    panel.webview.html = historyProvider.getHistoryHtml();
+                    vscode.window.showInformationMessage('VibeGuard: Scan history cleared.');
+                }
+            });
         })
     );
 

@@ -10,6 +10,160 @@ let currentData = null;
 let currentFilter = 'ALL';
 let doughnutChart = null;
 let barChart = null;
+let currentLang = localStorage.getItem('codeshield_lang') || 'en';
+
+const TRANSLATIONS = {
+  en: {
+    lang_btn: "العربية",
+    nav_scanner: "Scanner",
+    nav_features: "Features",
+    nav_extension: "VS Code Extension",
+    hero_badge: "AI-Powered Security Analysis",
+    hero_title: "Scan GitHub Repos for<br/><span class='gradient-text'>Security Vulnerabilities</span>",
+    hero_subtitle: "Detect SQL Injection, XSS, hardcoded secrets, command injection, and more across 10+ languages. Instantly. For free.",
+    scan_placeholder: "https://github.com/owner/repository",
+    scan_btn: "Scan Repository",
+    scan_try: "Try:",
+    step_clone: "Cloning repository...",
+    step_scan: "Scanning files...",
+    step_analyze: "Analyzing vulnerabilities...",
+    stat_languages: "Languages",
+    stat_types: "Vulnerability Types",
+    stat_mapped: "Mapped",
+    stat_free: "Free",
+    stat_forever: "Forever",
+    result_scan_time: "Just scanned",
+    new_scan_btn: "← New Scan",
+    metric_score: "Security Score",
+    score_analyzing: "Analyzing...",
+    sev_critical: "CRITICAL",
+    sev_high: "HIGH",
+    sev_medium: "MEDIUM",
+    sev_low: "LOW",
+    chart_distribution: "Distribution",
+    chart_type: "By Type",
+    stat_files: "Files Scanned",
+    stat_lines: "Lines of Code",
+    stat_issues: "Issues Found",
+    stat_duration: "Scan Time",
+    stat_affected: "Affected Files",
+    findings_title: "Vulnerability Findings",
+    filter_all: "All",
+    filter_critical: "Critical",
+    filter_high: "High",
+    filter_medium: "Medium",
+    filter_low: "Low",
+    empty_title: "No vulnerabilities detected!",
+    empty_sub: "Your repository passed all CodeShield security checks.",
+    affected_files: "Affected Files",
+    features_badge: "Capabilities",
+    features_title: "Enterprise-Grade Security Analysis",
+    feature1_title: "Static Analysis",
+    feature1_desc: "AST-level pattern matching detects vulnerabilities other scanners miss, with near-zero false positives.",
+    feature2_title: "10+ Languages",
+    feature2_desc: "Python, JavaScript, TypeScript, Java, PHP, Ruby, Go, C/C++, C# and more — one scan covers everything.",
+    feature3_title: "Lightning Fast",
+    feature3_desc: "Shallow clone + parallel scanning delivers results in seconds, not minutes, even for large repos.",
+    feature4_title: "CWE/OWASP Mapped",
+    feature4_desc: "Every finding is mapped to CWE IDs and OWASP Top 10 categories for compliance reporting.",
+    feature5_title: "Secret Detection",
+    feature5_desc: "Entropy-based and pattern matching catches hardcoded API keys, passwords, and tokens.",
+    feature6_title: "VS Code Extension",
+    feature6_desc: "Get inline vulnerability highlighting, AI-powered auto-fix, and real-time scanning as you code.",
+    cta_badge: "VS Code Extension",
+    cta_title: "Scan As You Code",
+    cta_sub: "Get real-time vulnerability detection, inline red underlines, and AI-powered one-click fixes directly in your editor.",
+    cta_btn: "Install VibeGuard for VS Code",
+    footer_github: "GitHub",
+    footer_vscode: "VS Code",
+    footer_copy: "© 2025 CodeShield AI. Powered by VibeGuard Engine.",
+    why_matters: "Why this matters:",
+    remediation: "Remediation",
+    code_fix: "Code Fix",
+    vulnerable_code: "Vulnerable Code",
+    vulnerable: "Vulnerable",
+    fixed: "Fixed",
+    snippet: "Snippet",
+    scan_failed: "Scan failed. Please try again.",
+    enter_url: "Please enter a GitHub repository URL.",
+    invalid_url: "URL must start with https://github.com/"
+  },
+  ar: {
+    lang_btn: "English",
+    nav_scanner: "الفاحص",
+    nav_features: "المميزات",
+    nav_extension: "إضافة VS Code",
+    hero_badge: "تحليل أمني مدعوم بالذكاء الاصطناعي",
+    hero_title: "افحص مستودعات GitHub بحثاً عن<br/><span class='gradient-text'>الثغرات الأمنية</span>",
+    hero_subtitle: "اكتشف ثغرات SQL Injection و XSS والأسرار المسربة وحقن الأوامر وغيرها في أكثر من 10 لغات. فوراً وبشكل مجاني.",
+    scan_placeholder: "https://github.com/owner/repository",
+    scan_btn: "ابدأ الفحص",
+    scan_try: "جرب:",
+    step_clone: "جاري استنساخ المستودع...",
+    step_scan: "جاري فحص الملفات...",
+    step_analyze: "جاري تحليل الثغرات...",
+    stat_languages: "لغات",
+    stat_types: "أنواع الثغرات",
+    stat_mapped: "موثقة",
+    stat_free: "مجاني",
+    stat_forever: "للأبد",
+    result_scan_time: "تم الفحص الآن",
+    new_scan_btn: "← فحص جديد",
+    metric_score: "درجة الأمان",
+    score_analyzing: "جاري التحليل...",
+    sev_critical: "خطير جداً",
+    sev_high: "خطورة عالية",
+    sev_medium: "متوسط",
+    sev_low: "منخفض",
+    chart_distribution: "التوزيع",
+    chart_type: "حسب النوع",
+    stat_files: "ملفات مفحوصة",
+    stat_lines: "أسطر الكود",
+    stat_issues: "ثغرات مكتشفة",
+    stat_duration: "وقت الفحص",
+    stat_affected: "ملفات متأثرة",
+    findings_title: "نتائج الفحص",
+    filter_all: "الكل",
+    filter_critical: "خطير جداً",
+    filter_high: "عالي",
+    filter_medium: "متوسط",
+    filter_low: "منخفض",
+    empty_title: "لم يتم اكتشاف أي ثغرات!",
+    empty_sub: "مستودعك اجتاز جميع الاختبارات الأمنية بنجاح.",
+    affected_files: "الملفات المتأثرة",
+    features_badge: "الإمكانيات",
+    features_title: "تحليل أمني بمستوى احترافي",
+    feature1_title: "التحليل الساكن",
+    feature1_desc: "مطابقة الأنماط على مستوى AST تكتشف الثغرات التي تغفل عنها الفواحص الأخرى، مع تقليل الإنذارات الخاطئة.",
+    feature2_title: "أكثر من 10 لغات",
+    feature2_desc: "Python و JS و TypeScript و Java و PHP و Ruby و Go و C/C++ و C# وغيرها — فحص واحد يغطي كل شيء.",
+    feature3_title: "سرعة فائقة",
+    feature3_desc: "الاستنساخ الضحل والفحص المتوازي يعطي نتائج في ثوانٍ معدودة حتى للمستودعات الكبيرة.",
+    feature4_title: "موثق CWE/OWASP",
+    feature4_desc: "كل نتيجة مرتبطة بمعرفات CWE وفئات OWASP Top 10 لتقارير الامتثال.",
+    feature5_title: "اكتشاف الأسرار",
+    feature5_desc: "اكتشاف مفاتيح API وكلمات المرور والرموز السرية المسربة باستخدام الأنماط والإنتروبيا.",
+    feature6_title: "إضافة VS Code",
+    feature6_desc: "احصل على تنبيهات فورية، وإصلاحات ذكية بالذكاء الاصطناعي أثناء كتابة الكود.",
+    cta_badge: "إضافة VS Code",
+    cta_title: "افحص أثناء البرمجة",
+    cta_sub: "احصل على اكتشاف فوري للثغرات وإصلاحات بضغطة زر واحدة داخل محررك المفضل.",
+    cta_btn: "تثبيت VibeGuard لـ VS Code",
+    footer_github: "GitHub",
+    footer_vscode: "VS Code",
+    footer_copy: "© 2025 CodeShield AI. مدعوم بمحرك VibeGuard.",
+    why_matters: "لماذا هذا مهم:",
+    remediation: "طريقة الإصلاح",
+    code_fix: "إصلاح الكود",
+    vulnerable_code: "الكود المصاب",
+    vulnerable: "مصاب",
+    fixed: "مصلح",
+    snippet: "مقتطف",
+    scan_failed: "فشل الفحص. يرجى المحاولة مرة أخرى.",
+    enter_url: "يرجى إدخال رابط مستودع GitHub.",
+    invalid_url: "يجب أن يبدأ الرابط بـ https://github.com/"
+  }
+};
 
 const SEV_COLORS = {
   CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#3b82f6', INFO: '#10b981'
@@ -20,9 +174,11 @@ const $ = id => document.getElementById(id);
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  updateUI();
   $('scan-btn').addEventListener('click', handleScan);
   $('repo-url-input').addEventListener('keydown', e => { if (e.key === 'Enter') handleScan(); });
   $('new-scan-btn').addEventListener('click', resetToHero);
+  $('lang-toggle').addEventListener('click', toggleLanguage);
 
   document.querySelectorAll('.example-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -144,7 +300,7 @@ function renderResults(data) {
   $('stat-files').textContent = data.stats.files_scanned.toLocaleString();
   $('stat-lines').textContent = data.stats.lines_scanned.toLocaleString();
   $('stat-issues').textContent = data.vulnerabilities.length;
-  $('stat-duration').textContent = data.stats.duration_ms + 'ms';
+  $('stat-duration').textContent = data.stats.duration_ms + (currentLang === 'ar' ? ' ملي ثانية' : 'ms');
   $('stat-affected').textContent = data.affected_files.length;
 
   // Charts
@@ -160,6 +316,38 @@ function renderResults(data) {
 
   // Scroll to results
   $('results-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ─── i18n Logic ───────────────────────────────────────────────────────────────
+function toggleLanguage() {
+  currentLang = currentLang === 'en' ? 'ar' : 'en';
+  localStorage.setItem('codeshield_lang', currentLang);
+  updateUI();
+  if (currentData) {
+    renderResults(currentData);
+  }
+}
+
+function updateUI() {
+  const dict = TRANSLATIONS[currentLang];
+  document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+  document.documentElement.lang = currentLang;
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (dict[key]) {
+      if (el.tagName === 'INPUT') {
+        el.placeholder = dict[key];
+      } else {
+        el.innerHTML = dict[key];
+      }
+    }
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (dict[key]) el.placeholder = dict[key];
+  });
 }
 
 // ─── Score Gauge (doughnut) ───────────────────────────────────────────────────
@@ -234,7 +422,7 @@ function renderBarChart(vulns) {
     data: {
       labels: sorted.map(([id]) => id),
       datasets: [{
-        label: 'Occurrences',
+        label: currentLang === 'ar' ? 'عدد المرات' : 'Occurrences',
         data: sorted.map(([, c]) => c),
         backgroundColor: 'rgba(99,102,241,.7)',
         borderRadius: 6,
@@ -316,7 +504,7 @@ function vulnCardHtml(v) {
   return `
   <div class="vuln-card" style="border-left-color:${c}">
     <div class="vuln-card-header">
-      <span class="vuln-sev-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${v.severity}</span>
+      <span class="vuln-sev-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${currentLang === 'ar' ? translateSeverity(v.severity) : v.severity}</span>
       <span class="vuln-rule-id">${esc(v.rule_id)}</span>
       <span class="vuln-title">${esc(v.rule_name)}</span>
       <span class="vuln-loc-chip">${esc(fileShort)}:${v.location.line}</span>
@@ -325,12 +513,17 @@ function vulnCardHtml(v) {
     <div class="vuln-card-body">
       <div class="vuln-msg">${esc(v.message)}</div>
       ${metaChips ? `<div class="vuln-meta-row">${metaChips}</div>` : ''}
-      ${v.explain_why ? `<div class="why-box"><strong>⚠️ Why this matters:</strong> ${esc(v.explain_why)}</div>` : ''}
-      <div class="vuln-section-label">Remediation</div>
+      ${v.explain_why ? `<div class="why-box"><strong>⚠️ ${TRANSLATIONS[currentLang].why_matters}</strong> ${esc(v.explain_why)}</div>` : ''}
+      <div class="vuln-section-label">${TRANSLATIONS[currentLang].remediation}</div>
       <div class="vuln-remediation">${esc(v.remediation)}</div>
       ${diff}
     </div>
   </div>`;
+}
+
+function translateSeverity(sev) {
+  const map = { CRITICAL: 'خطير جداً', HIGH: 'عالي', MEDIUM: 'متوسط', LOW: 'منخفض', INFO: 'معلومات' };
+  return map[sev] || sev;
 }
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────

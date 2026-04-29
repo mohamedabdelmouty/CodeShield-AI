@@ -37,9 +37,10 @@
         <span class="brand-name">CodeShield <span class="brand-ai">AI</span></span>
       </div>
       <div class="nav-links">
-        <a href="#scanner" class="nav-link">Scanner</a>
-        <a href="#features" class="nav-link">Features</a>
-        <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank" class="nav-cta">VS Code Extension</a>
+        <button id="lang-toggle" class="nav-link lang-btn">العربية</button>
+        <a href="#scanner" class="nav-link" data-i18n="nav_scanner">Scanner</a>
+        <a href="#features" class="nav-link" data-i18n="nav_features">Features</a>
+        <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank" class="nav-cta" data-i18n="nav_extension">VS Code Extension</a>
       </div>
     </div>
   </nav>
@@ -49,13 +50,13 @@
     <div class="hero-content">
       <div class="hero-badge">
         <span class="badge-dot"></span>
-        AI-Powered Security Analysis
+        <span data-i18n="hero_badge">AI-Powered Security Analysis</span>
       </div>
-      <h1 class="hero-title">
+      <h1 class="hero-title" data-i18n="hero_title">
         Scan GitHub Repos for<br/>
         <span class="gradient-text">Security Vulnerabilities</span>
       </h1>
-      <p class="hero-subtitle">
+      <p class="hero-subtitle" data-i18n="hero_subtitle">
         Detect SQL Injection, XSS, hardcoded secrets, command injection, and more across 10+ languages. Instantly. For free.
       </p>
 
@@ -72,17 +73,18 @@
             id="repo-url-input"
             class="scan-input"
             placeholder="https://github.com/owner/repository"
+            data-i18n-placeholder="scan_placeholder"
             autocomplete="off"
             spellcheck="false"
           />
           <button id="scan-btn" class="scan-btn">
-            <span id="scan-btn-text">Scan Repository</span>
+            <span id="scan-btn-text" data-i18n="scan_btn">Scan Repository</span>
             <span id="scan-btn-spinner" class="btn-spinner hidden"></span>
           </button>
         </div>
         <div id="scan-error" class="scan-error hidden"></div>
         <div class="scan-examples">
-          Try:
+          <span data-i18n="scan_try">Try:</span>
           <button class="example-btn" data-url="https://github.com/OWASP/WebGoat">OWASP/WebGoat</button>
           <button class="example-btn" data-url="https://github.com/digininja/DVWA">digininja/DVWA</button>
           <button class="example-btn" data-url="https://github.com/juice-shop/juice-shop">juice-shop/juice-shop</button>
@@ -102,13 +104,13 @@
           </svg>
         </div>
         <div class="loading-steps">
-          <div class="loading-step active" id="step-clone">
+          <div class="loading-step active" id="step-clone" data-i18n="step_clone">
             <span class="step-dot"></span>Cloning repository...
           </div>
-          <div class="loading-step" id="step-scan">
+          <div class="loading-step" id="step-scan" data-i18n="step_scan">
             <span class="step-dot"></span>Scanning files...
           </div>
-          <div class="loading-step" id="step-analyze">
+          <div class="loading-step" id="step-analyze" data-i18n="step_analyze">
             <span class="step-dot"></span>Analyzing vulnerabilities...
           </div>
         </div>
@@ -117,10 +119,10 @@
 
     <!-- Stats Ticker -->
     <div class="stats-row">
-      <div class="stat-pill"><span class="stat-num">10+</span> Languages</div>
-      <div class="stat-pill"><span class="stat-num">12</span> Vulnerability Types</div>
-      <div class="stat-pill"><span class="stat-num">CWE/OWASP</span> Mapped</div>
-      <div class="stat-pill"><span class="stat-num">Free</span> Forever</div>
+      <div class="stat-pill"><span class="stat-num">10+</span> <span data-i18n="stat_languages">Languages</span></div>
+      <div class="stat-pill"><span class="stat-num">12</span> <span data-i18n="stat_types">Vulnerability Types</span></div>
+      <div class="stat-pill"><span class="stat-num">CWE/OWASP</span> <span data-i18n="stat_mapped">Mapped</span></div>
+      <div class="stat-pill"><span class="stat-num" data-i18n="stat_free">Free</span> <span data-i18n="stat_forever">Forever</span></div>
     </div>
   </section>
 
@@ -136,17 +138,17 @@
           </svg>
           <div>
             <div id="result-repo-name" class="result-repo-name">owner/repo</div>
-            <div id="result-scan-time" class="result-scan-time">Just scanned</div>
+            <div id="result-scan-time" class="result-scan-time" data-i18n="result_scan_time">Just scanned</div>
           </div>
         </div>
-        <button id="new-scan-btn" class="new-scan-btn">← New Scan</button>
+        <button id="new-scan-btn" class="new-scan-btn" data-i18n="new_scan_btn">← New Scan</button>
       </div>
 
       <!-- Top Metrics Row -->
       <div class="metrics-row">
         <!-- Score Gauge -->
         <div class="metric-card score-card">
-          <div class="metric-label">Security Score</div>
+          <div class="metric-label" data-i18n="metric_score">Security Score</div>
           <div class="score-gauge-wrap">
             <canvas id="score-gauge" width="160" height="160"></canvas>
             <div class="score-overlay">
@@ -154,7 +156,7 @@
               <div id="score-grade" class="score-grade-badge">-</div>
             </div>
           </div>
-          <div id="score-label" class="score-label-text">Analyzing...</div>
+          <div id="score-label" class="score-label-text" data-i18n="score_analyzing">Analyzing...</div>
           <div id="score-pass-badge" class="pass-badge"></div>
         </div>
 
@@ -163,30 +165,30 @@
           <div class="sev-card critical-card">
             <div class="sev-icon">🔴</div>
             <div id="count-critical" class="sev-num">0</div>
-            <div class="sev-name">CRITICAL</div>
+            <div class="sev-name" data-i18n="sev_critical">CRITICAL</div>
           </div>
           <div class="sev-card high-card">
             <div class="sev-icon">🟠</div>
             <div id="count-high" class="sev-num">0</div>
-            <div class="sev-name">HIGH</div>
+            <div class="sev-name" data-i18n="sev_high">HIGH</div>
           </div>
           <div class="sev-card medium-card">
             <div class="sev-icon">🟡</div>
             <div id="count-medium" class="sev-num">0</div>
-            <div class="sev-name">MEDIUM</div>
+            <div class="sev-name" data-i18n="sev_medium">MEDIUM</div>
           </div>
           <div class="sev-card low-card">
             <div class="sev-icon">🔵</div>
             <div id="count-low" class="sev-num">0</div>
-            <div class="sev-name">LOW</div>
+            <div class="sev-name" data-i18n="sev_low">LOW</div>
           </div>
         </div>
 
         <!-- Charts -->
         <div class="charts-card">
           <div class="chart-tabs">
-            <button class="chart-tab active" data-chart="doughnut">Distribution</button>
-            <button class="chart-tab" data-chart="bar">By Type</button>
+            <button class="chart-tab active" data-chart="doughnut" data-i18n="chart_distribution">Distribution</button>
+            <button class="chart-tab" data-chart="bar" data-i18n="chart_type">By Type</button>
           </div>
           <div id="chart-doughnut-wrap" class="chart-wrap">
             <canvas id="sev-doughnut" width="200" height="200"></canvas>
@@ -199,15 +201,15 @@
 
       <!-- Stats Strip -->
       <div class="stats-strip">
-        <div class="strip-item"><span id="stat-files" class="strip-num">0</span><span class="strip-label">Files Scanned</span></div>
+        <div class="strip-item"><span id="stat-files" class="strip-num">0</span><span class="strip-label" data-i18n="stat_files">Files Scanned</span></div>
         <div class="strip-sep"></div>
-        <div class="strip-item"><span id="stat-lines" class="strip-num">0</span><span class="strip-label">Lines of Code</span></div>
+        <div class="strip-item"><span id="stat-lines" class="strip-num">0</span><span class="strip-label" data-i18n="stat_lines">Lines of Code</span></div>
         <div class="strip-sep"></div>
-        <div class="strip-item"><span id="stat-issues" class="strip-num">0</span><span class="strip-label">Issues Found</span></div>
+        <div class="strip-item"><span id="stat-issues" class="strip-num">0</span><span class="strip-label" data-i18n="stat_issues">Issues Found</span></div>
         <div class="strip-sep"></div>
-        <div class="strip-item"><span id="stat-duration" class="strip-num">0ms</span><span class="strip-label">Scan Time</span></div>
+        <div class="strip-item"><span id="stat-duration" class="strip-num">0ms</span><span class="strip-label" data-i18n="stat_duration">Scan Time</span></div>
         <div class="strip-sep"></div>
-        <div class="strip-item"><span id="stat-affected" class="strip-num">0</span><span class="strip-label">Affected Files</span></div>
+        <div class="strip-item"><span id="stat-affected" class="strip-num">0</span><span class="strip-label" data-i18n="stat_affected">Affected Files</span></div>
       </div>
 
       <!-- Main Content: Findings + File Tree -->
@@ -216,26 +218,26 @@
         <!-- Vulnerability List -->
         <div class="findings-main">
           <div class="findings-header">
-            <h2 class="findings-title">Vulnerability Findings</h2>
+            <h2 class="findings-title" data-i18n="findings_title">Vulnerability Findings</h2>
             <div class="findings-filters">
-              <button class="filter-btn active" data-sev="ALL">All</button>
-              <button class="filter-btn" data-sev="CRITICAL">Critical</button>
-              <button class="filter-btn" data-sev="HIGH">High</button>
-              <button class="filter-btn" data-sev="MEDIUM">Medium</button>
-              <button class="filter-btn" data-sev="LOW">Low</button>
+              <button class="filter-btn active" data-sev="ALL" data-i18n="filter_all">All</button>
+              <button class="filter-btn" data-sev="CRITICAL" data-i18n="filter_critical">Critical</button>
+              <button class="filter-btn" data-sev="HIGH" data-i18n="filter_high">High</button>
+              <button class="filter-btn" data-sev="MEDIUM" data-i18n="filter_medium">Medium</button>
+              <button class="filter-btn" data-sev="LOW" data-i18n="filter_low">Low</button>
             </div>
           </div>
           <div id="vuln-list" class="vuln-list"></div>
           <div id="vuln-empty" class="vuln-empty hidden">
             <div class="empty-icon">✅</div>
-            <div class="empty-title">No vulnerabilities detected!</div>
-            <div class="empty-sub">Your repository passed all CodeShield security checks.</div>
+            <div class="empty-title" data-i18n="empty_title">No vulnerabilities detected!</div>
+            <div class="empty-sub" data-i18n="empty_sub">Your repository passed all CodeShield security checks.</div>
           </div>
         </div>
 
         <!-- Affected Files Tree -->
         <div class="file-tree-panel">
-          <div class="panel-title">Affected Files</div>
+          <div class="panel-title" data-i18n="affected_files">Affected Files</div>
           <div id="file-tree" class="file-tree"></div>
         </div>
       </div>
@@ -245,38 +247,38 @@
   <!-- ── Features Section ───────────────────────────────────────────────── -->
   <section class="features-section" id="features">
     <div class="features-inner">
-      <div class="section-badge">Capabilities</div>
-      <h2 class="section-title">Enterprise-Grade Security Analysis</h2>
+      <div class="section-badge" data-i18n="features_badge">Capabilities</div>
+      <h2 class="section-title" data-i18n="features_title">Enterprise-Grade Security Analysis</h2>
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#6366f1,#818cf8)">🔍</div>
-          <h3>Static Analysis</h3>
-          <p>AST-level pattern matching detects vulnerabilities other scanners miss, with near-zero false positives.</p>
+          <h3 data-i18n="feature1_title">Static Analysis</h3>
+          <p data-i18n="feature1_desc">AST-level pattern matching detects vulnerabilities other scanners miss, with near-zero false positives.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">🌐</div>
-          <h3>10+ Languages</h3>
-          <p>Python, JavaScript, TypeScript, Java, PHP, Ruby, Go, C/C++, C# and more — one scan covers everything.</p>
+          <h3 data-i18n="feature2_title">10+ Languages</h3>
+          <p data-i18n="feature2_desc">Python, JavaScript, TypeScript, Java, PHP, Ruby, Go, C/C++, C# and more — one scan covers everything.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)">⚡</div>
-          <h3>Lightning Fast</h3>
-          <p>Shallow clone + parallel scanning delivers results in seconds, not minutes, even for large repos.</p>
+          <h3 data-i18n="feature3_title">Lightning Fast</h3>
+          <p data-i18n="feature3_desc">Shallow clone + parallel scanning delivers results in seconds, not minutes, even for large repos.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#10b981,#059669)">🎯</div>
-          <h3>CWE/OWASP Mapped</h3>
-          <p>Every finding is mapped to CWE IDs and OWASP Top 10 categories for compliance reporting.</p>
+          <h3 data-i18n="feature4_title">CWE/OWASP Mapped</h3>
+          <p data-i18n="feature4_desc">Every finding is mapped to CWE IDs and OWASP Top 10 categories for compliance reporting.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)">🔐</div>
-          <h3>Secret Detection</h3>
-          <p>Entropy-based and pattern matching catches hardcoded API keys, passwords, and tokens.</p>
+          <h3 data-i18n="feature5_title">Secret Detection</h3>
+          <p data-i18n="feature5_desc">Entropy-based and pattern matching catches hardcoded API keys, passwords, and tokens.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">🧩</div>
-          <h3>VS Code Extension</h3>
-          <p>Get inline vulnerability highlighting, AI-powered auto-fix, and real-time scanning as you code.</p>
+          <h3 data-i18n="feature6_title">VS Code Extension</h3>
+          <p data-i18n="feature6_desc">Get inline vulnerability highlighting, AI-powered auto-fix, and real-time scanning as you code.</p>
         </div>
       </div>
     </div>
@@ -285,14 +287,14 @@
   <!-- ── VS Code CTA ─────────────────────────────────────────────────────── -->
   <section class="cta-section">
     <div class="cta-inner">
-      <div class="cta-badge">VS Code Extension</div>
-      <h2 class="cta-title">Scan As You Code</h2>
-      <p class="cta-sub">Get real-time vulnerability detection, inline red underlines, and AI-powered one-click fixes directly in your editor.</p>
+      <div class="cta-badge" data-i18n="cta_badge">VS Code Extension</div>
+      <h2 class="cta-title" data-i18n="cta_title">Scan As You Code</h2>
+      <p class="cta-sub" data-i18n="cta_sub">Get real-time vulnerability detection, inline red underlines, and AI-powered one-click fixes directly in your editor.</p>
       <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank" class="cta-btn">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M17.5 0h-11L0 6.5V17.5L6.5 24H17.5L24 17.5V6.5L17.5 0z"/>
         </svg>
-        Install VibeGuard for VS Code
+        <span data-i18n="cta_btn">Install VibeGuard for VS Code</span>
       </a>
     </div>
   </section>
@@ -305,10 +307,10 @@
         <span class="footer-version">v2.0.0</span>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/vibeguard/vibeguard" target="_blank">GitHub</a>
-        <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank">VS Code</a>
+        <a href="https://github.com/vibeguard/vibeguard" target="_blank" data-i18n="footer_github">GitHub</a>
+        <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank" data-i18n="footer_vscode">VS Code</a>
       </div>
-      <div class="footer-copy">© 2025 CodeShield AI. Powered by VibeGuard Engine.</div>
+      <div class="footer-copy" data-i18n="footer_copy">© 2025 CodeShield AI. Powered by VibeGuard Engine.</div>
     </div>
   </footer>
 

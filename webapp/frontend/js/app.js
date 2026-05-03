@@ -86,7 +86,19 @@ const TRANSLATIONS = {
     snippet: "Snippet",
     scan_failed: "Scan failed. Please try again.",
     enter_url: "Please enter a GitHub repository URL.",
-    invalid_url: "URL must start with https://github.com/"
+    invalid_url: "URL must start with https://github.com/",
+    download_pdf: "Download PDF",
+    pdf_modal_title: "Download Report (PDF)",
+    pdf_modal_sub: "Select the language for your security report:",
+    cancel: "Cancel",
+    pdf_title_report: "Security Analysis Report",
+    pdf_target: "Target:",
+    pdf_date: "Date:",
+    pdf_score: "Security Score:",
+    pdf_total: "Total Issues:",
+    pdf_summary: "Summary",
+    pdf_findings: "Detailed Findings",
+    generating_pdf: "Generating PDF..."
   },
   ar: {
     lang_btn: "English",
@@ -161,7 +173,19 @@ const TRANSLATIONS = {
     snippet: "مقتطف",
     scan_failed: "فشل الفحص. يرجى المحاولة مرة أخرى.",
     enter_url: "يرجى إدخال رابط مستودع GitHub.",
-    invalid_url: "يجب أن يبدأ الرابط بـ https://github.com/"
+    invalid_url: "يجب أن يبدأ الرابط بـ https://github.com/",
+    download_pdf: "تنزيل PDF",
+    pdf_modal_title: "تنزيل التقرير (PDF)",
+    pdf_modal_sub: "اختر لغة تقرير الفحص الأمني:",
+    cancel: "إلغاء",
+    pdf_title_report: "تقرير التحليل الأمني",
+    pdf_target: "المستهدف:",
+    pdf_date: "التاريخ:",
+    pdf_score: "درجة الأمان:",
+    pdf_total: "إجمالي الثغرات:",
+    pdf_summary: "ملخص",
+    pdf_findings: "النتائج التفصيلية",
+    generating_pdf: "جاري إنشاء PDF..."
   }
 };
 
@@ -179,6 +203,22 @@ document.addEventListener('DOMContentLoaded', () => {
   $('repo-url-input').addEventListener('keydown', e => { if (e.key === 'Enter') handleScan(); });
   $('new-scan-btn').addEventListener('click', resetToHero);
   $('lang-toggle').addEventListener('click', toggleLanguage);
+  
+  // PDF Download Events
+  $('download-pdf-btn').addEventListener('click', () => {
+    $('pdf-modal').classList.remove('hidden');
+  });
+  $('pdf-close-btn').addEventListener('click', () => {
+    $('pdf-modal').classList.add('hidden');
+  });
+  $('pdf-en-btn').addEventListener('click', () => {
+    $('pdf-modal').classList.add('hidden');
+    generatePdf('en');
+  });
+  $('pdf-ar-btn').addEventListener('click', () => {
+    $('pdf-modal').classList.add('hidden');
+    generatePdf('ar');
+  });
 
   document.querySelectorAll('.example-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -504,7 +544,7 @@ function vulnCardHtml(v) {
   return `
   <div class="vuln-card" style="border-left-color:${c}">
     <div class="vuln-card-header">
-      <span class="vuln-sev-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${currentLang === 'ar' ? translateSeverity(v.severity) : v.severity}</span>
+      <span class="vuln-sev-badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${translateSeverity(v.severity, currentLang)}</span>
       <span class="vuln-rule-id">${esc(v.rule_id)}</span>
       <span class="vuln-title">${esc(v.rule_name)}</span>
       <span class="vuln-loc-chip">${esc(fileShort)}:${v.location.line}</span>
@@ -521,9 +561,98 @@ function vulnCardHtml(v) {
   </div>`;
 }
 
-function translateSeverity(sev) {
+function translateSeverity(sev, lang) {
+  const l = lang || currentLang;
+  if (l === 'en') return sev;
   const map = { CRITICAL: 'خطير جداً', HIGH: 'عالي', MEDIUM: 'متوسط', LOW: 'منخفض', INFO: 'معلومات' };
   return map[sev] || sev;
+}
+
+// ─── PDF Generation ───────────────────────────────────────────────────────────
+function generatePdf(lang) {
+  if (!currentData) return;
+  const t = TRANSLATIONS[lang];
+  const tpl = $('pdf-template');
+  const d = currentData;
+  
+  // Setup Direction & Fonts
+  tpl.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+  
+  // Populate Header & Meta
+  $('pdf-main-title').textContent = t.pdf_title_report;
+  $('pdf-repo-name').textContent = d.repo_url;
+  $('pdf-date').textContent = new Date().toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US');
+  $('pdf-score').textContent = d.score ? d.score.score : '--';
+  $('pdf-total-issues').textContent = d.vulnerabilities.length;
+  
+  // Update Meta Labels
+  const metaItems = document.querySelectorAll('.pdf-meta-item strong');
+  if (metaItems.length >= 4) {
+    metaItems[0].textContent = t.pdf_target;
+    metaItems[1].textContent = t.pdf_date;
+    metaItems[2].textContent = t.pdf_score;
+    metaItems[3].textContent = t.pdf_total;
+  }
+
+  // Populate Summary
+  $('pdf-summary-title').textContent = t.pdf_summary;
+  $('pdf-crit-count').textContent = d.summary.CRITICAL || 0;
+  $('pdf-crit-label').textContent = translateSeverity('CRITICAL', lang);
+  $('pdf-high-count').textContent = d.summary.HIGH || 0;
+  $('pdf-high-label').textContent = translateSeverity('HIGH', lang);
+  $('pdf-med-count').textContent = d.summary.MEDIUM || 0;
+  $('pdf-med-label').textContent = translateSeverity('MEDIUM', lang);
+  $('pdf-low-count').textContent = d.summary.LOW || 0;
+  $('pdf-low-label').textContent = translateSeverity('LOW', lang);
+
+  // Populate Findings
+  $('pdf-findings-title').textContent = t.pdf_findings;
+  const vulnList = $('pdf-vuln-list');
+  vulnList.innerHTML = '';
+  
+  if (d.vulnerabilities.length === 0) {
+    vulnList.innerHTML = `<p>${t.empty_sub}</p>`;
+  } else {
+    d.vulnerabilities.forEach(v => {
+      const c = SEV_COLORS[v.severity] || '#aaa';
+      const sevLabel = translateSeverity(v.severity, lang);
+      const fileShort = v.location.file.split('/').pop();
+      const div = document.createElement('div');
+      div.className = 'pdf-vuln';
+      div.innerHTML = `
+        <div class="pdf-vuln-header">
+          <span class="pdf-vuln-badge" style="color:${c}">${sevLabel}</span>
+          <span class="pdf-vuln-title">${esc(v.rule_name)}</span>
+          <span class="pdf-vuln-loc">${esc(v.location.file)}:${v.location.line}</span>
+        </div>
+        <div class="pdf-vuln-msg">${esc(v.message)}</div>
+        <div class="pdf-section-title">${t.remediation}</div>
+        <div class="pdf-remediation">${esc(v.remediation)}</div>
+      `;
+      vulnList.appendChild(div);
+    });
+  }
+
+  // Generate with html2pdf
+  const opt = {
+    margin:       10,
+    filename:     `CodeShield_Report_${d.repo_url.split('/').pop()}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  
+  // Show temporary feedback on button
+  const btnText = $('download-pdf-btn').querySelector('span');
+  const origText = btnText.textContent;
+  btnText.textContent = t.generating_pdf;
+  
+  $('pdf-template-wrapper').style.display = 'block';
+  
+  html2pdf().set(opt).from(tpl).save().then(() => {
+    $('pdf-template-wrapper').style.display = 'none';
+    btnText.textContent = origText;
+  });
 }
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────

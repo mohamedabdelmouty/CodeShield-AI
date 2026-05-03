@@ -1,8 +1,15 @@
 /**
- * VibeGuard VS Code Extension — Main Entry Point
+ * VibeGuard VS Code Extension v3.0 — Main Entry Point
  *
  * Activates the extension, registers commands, and binds event listeners.
  * Compatible with VS Code, Cursor, and Windsurf.
+ *
+ * New in v3.0:
+ *  - vibeguard.autoFix      — AI-powered code fix via CodeShield backend
+ *  - vibeguard.explainVuln  — AI explanation WebView panel
+ *  - vibeguard.toggleRealtime — Toggle real-time typing scan
+ *  - Real-time debounced scan on document change
+ *  - Pre-push Git hook installer
  */
 
 import { spawn } from 'child_process';
@@ -15,6 +22,8 @@ import { scan, scanCode, getAllRules, VIBEGUARD_VERSION } from '@vibeguard/core'
 import { VibeguardCodeActionProvider } from './code-actions';
 import { VibeguardChatProvider } from './chat-panel';
 import { VulnerabilityHistoryProvider } from './history-provider';
+import { AutoFixProvider, executeAutoFix, vulnDataMap, diagKey } from './auto-fix-provider';
+import { showExplainPanel } from './explain-panel';
 
 // ─── Supported Language IDs ───────────────────────────────────────────────────
 
@@ -47,6 +56,10 @@ let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
 let historyProvider: VulnerabilityHistoryProvider;
 
+// Real-time scan debounce timer
+let realtimeScanTimer: NodeJS.Timeout | undefined;
+let realtimeScanEnabled = true;
+
 // ─── Activation ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -73,7 +86,8 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     context.subscriptions.push(codeLensDisposable);
 
-    // ── Register Code Action Provider (AI Auto-Fix) ────────────────
+    // ── Register Code Action Providers ────────────────────────────
+    // Legacy provider (existing)
     const codeActionProvider = new VibeguardCodeActionProvider(diagnosticsProvider);
     const codeActionDisposable = vscode.languages.registerCodeActionsProvider(
         SUPPORTED_LANGUAGES.map((lang) => ({ language: lang })),
@@ -81,6 +95,15 @@ export function activate(context: vscode.ExtensionContext): void {
         { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
     );
     context.subscriptions.push(codeActionDisposable);
+
+    // NEW v3.0: AI-powered auto-fix provider
+    const autoFixProvider = new AutoFixProvider();
+    const autoFixDisposable = vscode.languages.registerCodeActionsProvider(
+        SUPPORTED_LANGUAGES.map((lang) => ({ language: lang })),
+        autoFixProvider,
+        { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    );
+    context.subscriptions.push(autoFixDisposable);
 
     // ── Register Chat Provider ──────────────────────────────────────
     const chatProvider = new VibeguardChatProvider(context.extensionUri);
@@ -219,6 +242,58 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
+    // ── NEW v3.0: AI Auto-Fix Command ─────────────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'vibeguard.autoFix',
+            async (docUri: vscode.Uri, diag: vscode.Diagnostic, vuln: any) => {
+                const doc = await vscode.workspace.openTextDocument(docUri);
+                await executeAutoFix(doc, diag, vuln);
+            }
+        )
+    );
+
+    // ── NEW v3.0: AI Explain Vulnerability Command ────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'vibeguard.explainVuln',
+            async (vuln?: any) => {
+                // If no vuln passed, try to get from cursor position
+                if (!vuln) {
+                    const editor = vscode.window.activeTextEditor;
+                    if (!editor) {
+                        vscode.window.showWarningMessage('VibeGuard: Place cursor on a flagged line to explain.');
+                        return;
+                    }
+                    const line = editor.selection.active.line + 1;
+                    const uri = editor.document.uri;
+                    // Find a matching vuln in the map
+                    for (const [key, v] of vulnDataMap.entries()) {
+                        if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
+                            vuln = v;
+                            break;
+                        }
+                    }
+                }
+                if (!vuln) {
+                    vscode.window.showWarningMessage('VibeGuard: No vulnerability found at cursor. Scan the file first.');
+                    return;
+                }
+                await showExplainPanel(context, vuln);
+            }
+        )
+    );
+
+    // ── NEW v3.0: Toggle Real-time Scan ───────────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vibeguard.toggleRealtime', () => {
+            realtimeScanEnabled = !realtimeScanEnabled;
+            const state = realtimeScanEnabled ? 'enabled' : 'disabled';
+            vscode.window.showInformationMessage(`VibeGuard: Real-time scanning ${state}.`);
+            outputChannel.appendLine(`[VibeGuard] Real-time scanning ${state}`);
+        })
+    );
+
     // ── Pre-commit Hook ───────────────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand('vibeguard.installPreCommitHook', async () => {
@@ -313,6 +388,7 @@ echo "✅ VibeGuard: Security check passed."
     // ── Event Listeners ───────────────────────────────────────────
 
     const config = vscode.workspace.getConfiguration('vibeguard');
+    const realtimeDelay = config.get<number>('realtimeScanDelay', 1500);
 
     // Auto-scan on file save
     if (config.get<boolean>('scanOnSave')) {
@@ -336,6 +412,23 @@ echo "✅ VibeGuard: Security check passed."
             })
         );
     }
+
+    // ── NEW v3.0: Real-time scan on document change (debounced) ───────────────
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (!realtimeScanEnabled) return;
+            if (!config.get<boolean>('enabled')) return;
+            const doc = event.document;
+            if (!SUPPORTED_EXTENSIONS.test(doc.uri.fsPath)) return;
+            if (event.contentChanges.length === 0) return;
+
+            // Clear existing timer and set a new debounced one
+            if (realtimeScanTimer) clearTimeout(realtimeScanTimer);
+            realtimeScanTimer = setTimeout(async () => {
+                await scanActiveFile(doc);
+            }, realtimeDelay);
+        })
+    );
 
     // Scan the currently active file on startup
     if (vscode.window.activeTextEditor) {

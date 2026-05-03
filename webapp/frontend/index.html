@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/fix-panel.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -41,6 +42,15 @@
         <button id="lang-toggle" class="nav-link lang-btn">العربية</button>
         <a href="#scanner" class="nav-link" data-i18n="nav_scanner">Scanner</a>
         <a href="#features" class="nav-link" data-i18n="nav_features">Features</a>
+        <!-- History toggle -->
+        <button id="history-toggle-btn" class="history-toggle-btn" title="Scan History">
+          🕒 <span>History</span>
+        </button>
+        <!-- AI Model Status -->
+        <div class="model-indicator" id="model-indicator" title="Active AI model">
+          <div class="model-dot" id="model-dot"></div>
+          <span id="model-name">AI</span>
+        </div>
         <a href="https://marketplace.visualstudio.com/items?itemName=vibeguardapp.vibeguard-vscode" target="_blank" class="nav-cta" data-i18n="nav_extension">VS Code Extension</a>
       </div>
     </div>
@@ -364,5 +374,133 @@
   </div>
 
   <script src="js/app.js"></script>
+
+  <!-- ── Auto-Fix Modal ─────────────────────────────────────────────────── -->
+  <div id="fix-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="fix-modal-header">
+        <div class="fix-modal-title">
+          <span>🔧</span>
+          <span id="fix-modal-rule-name">Fixing vulnerability...</span>
+          <span id="fix-modal-severity" class="sev-badge"></span>
+        </div>
+        <button class="modal-close-btn" id="fix-modal-close">✕</button>
+      </div>
+      <div class="fix-modal-body">
+        <!-- Loading state -->
+        <div id="fix-loading" style="text-align:center;padding:60px 20px;color:#8b949e">
+          <div style="font-size:40px;margin-bottom:16px">🤖</div>
+          <div style="font-size:14px">Generating AI-powered secure fix…</div>
+          <div class="fix-spinner" style="margin:16px auto 0"></div>
+        </div>
+        <!-- Result -->
+        <div id="fix-result" style="display:none">
+          <div class="diff-container">
+            <div class="diff-pane">
+              <div class="diff-pane-header before">⬅ Before (Vulnerable)</div>
+              <pre id="fix-original-code"></pre>
+            </div>
+            <div class="diff-pane">
+              <div class="diff-pane-header after">After (Secure) ➡</div>
+              <pre id="fix-fixed-code"></pre>
+            </div>
+          </div>
+          <div class="fix-info-grid">
+            <div class="fix-info-box">
+              <div class="fix-info-label">Explanation</div>
+              <div class="fix-info-value" id="fix-explanation"></div>
+            </div>
+            <div class="fix-info-box">
+              <div class="fix-info-label">Security Improvement</div>
+              <div class="fix-info-value good" id="fix-security-improvement"></div>
+            </div>
+            <div class="fix-info-box">
+              <div class="fix-info-label">Breaking Changes</div>
+              <div class="fix-info-value warn" id="fix-breaking-changes"></div>
+            </div>
+            <div class="fix-info-box">
+              <div class="fix-info-label">Model Used</div>
+              <div class="fix-info-value"><span class="model-used-badge">🤖 <span id="fix-model-used"></span></span></div>
+            </div>
+          </div>
+        </div>
+        <!-- Error -->
+        <div id="fix-error" style="display:none;padding:20px;color:#f85149;"></div>
+      </div>
+      <div class="fix-modal-footer" id="fix-modal-footer" style="display:none">
+        <button class="fix-action-btn primary" id="fix-copy-btn">📋 Copy Fixed Code</button>
+        <button class="fix-action-btn secondary" id="fix-pr-btn" style="display:none">🔀 Create GitHub PR</button>
+        <button class="fix-action-btn secondary" id="fix-close-footer-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── AI Explain Drawer ───────────────────────────────────────────────── -->
+  <div id="drawer-backdrop" class="drawer-backdrop"></div>
+  <div id="explain-drawer">
+    <div class="explain-header">
+      <div>
+        <div class="explain-title" id="explain-rule-name">Security Vulnerability</div>
+        <div class="explain-location">
+          <code id="explain-file">file.py</code> line <strong id="explain-line">1</strong>
+        </div>
+      </div>
+      <button class="modal-close-btn" id="explain-close-btn">✕</button>
+    </div>
+    <div class="explain-tabs">
+      <div class="explain-tab active" data-tab="why">❓ Why Dangerous</div>
+      <div class="explain-tab" data-tab="attack">⚔️ Attack</div>
+      <div class="explain-tab" data-tab="best">🛡️ Best Practices</div>
+    </div>
+    <div class="explain-body">
+      <!-- Loading -->
+      <div id="explain-loading" class="explain-skeleton">
+        <div class="explain-skeleton-line" style="width:90%"></div>
+        <div class="explain-skeleton-line" style="width:75%"></div>
+        <div class="explain-skeleton-line" style="width:60%"></div>
+      </div>
+      <!-- Why dangerous tab -->
+      <div class="explain-content active" id="explain-content-why" style="display:none">
+        <div class="explain-section">
+          <div class="explain-section-title">Why This Is Dangerous</div>
+          <p id="explain-why-dangerous"></p>
+        </div>
+        <div class="explain-section">
+          <div class="explain-section-title">Severity Rationale</div>
+          <p id="explain-severity-rationale"></p>
+        </div>
+      </div>
+      <!-- Attack scenario tab -->
+      <div class="explain-content" id="explain-content-attack" style="display:none">
+        <div class="explain-section">
+          <div class="explain-section-title">Realistic Attack Scenario</div>
+          <p id="explain-attack-scenario"></p>
+        </div>
+      </div>
+      <!-- Best practices tab -->
+      <div class="explain-content" id="explain-content-best" style="display:none">
+        <div class="explain-section">
+          <div class="explain-section-title">Secure Coding Best Practices</div>
+          <ul class="practices-list" id="explain-best-practices"></ul>
+        </div>
+        <div class="explain-section">
+          <div class="explain-section-title">References</div>
+          <ul class="refs-list" id="explain-references"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Scan History Sidebar ──────────────────────────────────────────────── -->
+  <div id="history-sidebar">
+    <div class="history-header">
+      <div class="history-title">🕒 Scan History</div>
+      <button class="history-clear-btn" id="history-clear-btn">Clear All</button>
+    </div>
+    <div class="history-list" id="history-list">
+      <div class="history-empty">No scans yet.<br>Scan a repo to get started.</div>
+    </div>
+  </div>
+
 </body>
 </html>

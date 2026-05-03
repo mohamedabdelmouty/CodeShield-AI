@@ -515,6 +515,22 @@ function renderVulnList(vulns) {
       header.parentElement.classList.toggle('expanded');
     });
   });
+
+  // Fix buttons
+  container.querySelectorAll('.fix-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      try { openFixModal(JSON.parse(btn.dataset.vuln)); } catch {}
+    });
+  });
+
+  // Explain buttons
+  container.querySelectorAll('.explain-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      try { openExplainDrawer(JSON.parse(btn.dataset.vuln)); } catch {}
+    });
+  });
 }
 
 function vulnCardHtml(v) {
@@ -692,3 +708,221 @@ function esc(str) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ─── v3.0: Auto-Fix Modal ─────────────────────────────────────────────────────
+
+let _currentFixData = null;
+
+async function openFixModal(vuln) {
+  $('fix-modal').classList.remove('hidden');
+  $('fix-modal-rule-name').textContent = vuln.rule_name;
+  const sevBadge = $('fix-modal-severity');
+  sevBadge.textContent = vuln.severity;
+  sevBadge.className = 'sev-badge ' + vuln.severity;
+
+  $('fix-loading').style.display = 'block';
+  $('fix-result').style.display = 'none';
+  $('fix-error').style.display = 'none';
+  $('fix-modal-footer').style.display = 'none';
+  _currentFixData = null;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vuln }),
+    });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    _currentFixData = data;
+
+    $('fix-original-code').textContent = data.original_code || '(no snippet)';
+    $('fix-fixed-code').textContent    = data.fixed_code    || '(no fix generated)';
+    $('fix-explanation').textContent           = data.explanation;
+    $('fix-security-improvement').textContent  = data.security_improvement;
+    $('fix-breaking-changes').textContent      = data.breaking_changes || 'None';
+    $('fix-model-used').textContent            = data.model_used;
+
+    $('fix-loading').style.display      = 'none';
+    $('fix-result').style.display       = 'block';
+    $('fix-modal-footer').style.display = 'flex';
+  } catch (err) {
+    $('fix-loading').style.display = 'none';
+    $('fix-error').style.display   = 'block';
+    $('fix-error').textContent = '⚠️ Failed to generate fix: ' + err.message +
+      '\n\nMake sure the CodeShield backend is running at http://localhost:8000';
+  }
+}
+
+function closeFixModal() {
+  $('fix-modal').classList.add('hidden');
+  _currentFixData = null;
+}
+
+// ─── v3.0: AI Explain Drawer ──────────────────────────────────────────────────
+
+let _activeExplainTab = 'why';
+
+function openExplainDrawer(vuln) {
+  $('explain-drawer').classList.add('open');
+  $('drawer-backdrop').classList.add('visible');
+  $('explain-rule-name').textContent = vuln.rule_name;
+  $('explain-file').textContent      = vuln.location.file;
+  $('explain-line').textContent      = vuln.location.line;
+
+  $('explain-loading').style.display = 'block';
+  document.querySelectorAll('.explain-content').forEach(c => c.style.display = 'none');
+  _setExplainTab('why');
+
+  fetch(`${API_BASE}/api/explain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vuln }),
+  })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(data => {
+      $('explain-loading').style.display = 'none';
+      $('explain-why-dangerous').textContent      = data.why_dangerous;
+      $('explain-severity-rationale').textContent = data.severity_rationale;
+      $('explain-attack-scenario').textContent    = data.attack_scenario;
+
+      $('explain-best-practices').innerHTML =
+        (data.best_practices || []).map(p => `<li>${esc(p)}</li>`).join('');
+      $('explain-references').innerHTML =
+        (data.references || []).map(r =>
+          `<li><a href="${esc(r)}" target="_blank" rel="noopener">${esc(r)}</a></li>`
+        ).join('');
+
+      _showExplainContent('why');
+    })
+    .catch(() => {
+      $('explain-loading').style.display = 'none';
+      $('explain-why-dangerous').textContent      = vuln.explain_why || 'This vulnerability can be exploited to compromise your application.';
+      $('explain-severity-rationale').textContent = `Severity ${vuln.severity} based on potential impact.`;
+      $('explain-attack-scenario').textContent    = 'An attacker could exploit this through automated scanning or manual testing.';
+      $('explain-best-practices').innerHTML       = ['Follow OWASP guidelines','Apply input validation','Use security-focused code review'].map(p => `<li>${esc(p)}</li>`).join('');
+      $('explain-references').innerHTML           = `<li><a href="https://owasp.org/www-project-top-ten/" target="_blank">OWASP Top 10</a></li>`;
+      _showExplainContent('why');
+    });
+}
+
+function _showExplainContent(tab) {
+  document.querySelectorAll('.explain-content').forEach(c => c.style.display = 'none');
+  const el = $(`explain-content-${tab}`);
+  if (el) el.style.display = 'block';
+}
+
+function _setExplainTab(tab) {
+  _activeExplainTab = tab;
+  document.querySelectorAll('.explain-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+}
+
+function closeExplainDrawer() {
+  $('explain-drawer').classList.remove('open');
+  $('drawer-backdrop').classList.remove('visible');
+}
+
+// ─── v3.0: Scan History Sidebar ───────────────────────────────────────────────
+
+let _history = [];
+
+async function loadHistory() {
+  try {
+    const res = await fetch(`${API_BASE}/api/history?limit=20`);
+    if (!res.ok) return;
+    const data = await res.json();
+    _history = data.entries || [];
+    renderHistory();
+  } catch { /* backend not available */ }
+}
+
+function renderHistory() {
+  const list = $('history-list');
+  if (!_history.length) {
+    list.innerHTML = '<div class="history-empty">No scans yet.<br>Scan a repo to get started.</div>';
+    return;
+  }
+  list.innerHTML = _history.map(h => {
+    const time = h.timestamp ? new Date(h.timestamp).toLocaleDateString() : '';
+    return `<div class="history-item">
+      <div class="history-item-repo">${esc(h.repo_name)}</div>
+      <div class="history-item-meta">
+        <span class="history-item-score ${h.grade}">${h.score}/100 ${h.grade}</span>
+        <span>${h.total_vulns} issues</span>
+        <span>${time}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openHistorySidebar() {
+  $('history-sidebar').classList.add('open');
+  loadHistory();
+}
+
+function closeHistorySidebar() {
+  $('history-sidebar').classList.remove('open');
+}
+
+async function clearHistory() {
+  try {
+    await fetch(`${API_BASE}/api/history`, { method: 'DELETE' });
+    _history = [];
+    renderHistory();
+  } catch { /* ignore */ }
+}
+
+// ─── v3.0: Model Status ───────────────────────────────────────────────────────
+
+async function loadModelStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/models`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const names = { openai: 'OpenAI GPT', anthropic: 'Claude', gemini: 'Gemini', static: 'Static' };
+    $('model-name').textContent = names[data.active_model] || data.active_model;
+    $('model-dot').classList.remove('offline');
+  } catch {
+    $('model-name').textContent = 'Offline';
+    $('model-dot').classList.add('offline');
+  }
+}
+
+// ─── v3.0: DOMContentLoaded Bindings (appended) ──────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Fix modal
+  $('fix-modal-close')?.addEventListener('click', closeFixModal);
+  $('fix-close-footer-btn')?.addEventListener('click', closeFixModal);
+  $('fix-modal')?.addEventListener('click', e => { if (e.target === $('fix-modal')) closeFixModal(); });
+  $('fix-copy-btn')?.addEventListener('click', () => {
+    if (_currentFixData?.fixed_code) {
+      navigator.clipboard?.writeText(_currentFixData.fixed_code).then(() => {
+        const btn = $('fix-copy-btn');
+        const orig = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      });
+    }
+  });
+
+  // Explain drawer
+  $('explain-close-btn')?.addEventListener('click', closeExplainDrawer);
+  $('drawer-backdrop')?.addEventListener('click', closeExplainDrawer);
+  document.querySelectorAll('.explain-tab').forEach(tab => {
+    tab.addEventListener('click', () => _setExplainTab(tab.dataset.tab));
+  });
+
+  // History sidebar
+  $('history-toggle-btn')?.addEventListener('click', () => {
+    const sidebar = $('history-sidebar');
+    sidebar.classList.contains('open') ? closeHistorySidebar() : openHistorySidebar();
+  });
+  $('history-clear-btn')?.addEventListener('click', clearHistory);
+
+  // Load model status
+  loadModelStatus();
+  setInterval(loadModelStatus, 60_000);
+});

@@ -1,8 +1,8 @@
 {
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
-    "description": "Real-time security vulnerability detection for JS/TS — SQL Injection, XSS, Hardcoded Secrets, and more.",
-    "version": "2.0.0",
+    "description": "Real-time AI-powered security vulnerability detection — SQL Injection, XSS, Secrets, Auto-Fix, and more. Powered by CodeShield AI.",
+    "version": "3.0.0",
     "publisher": "vibeguardapp",
     "galleryBanner": {
         "color": "#0f0f1a",
@@ -88,6 +88,21 @@
                 "command": "vibeguard.showHistory",
                 "title": "VibeGuard: Show Scan History",
                 "icon": "$(history)"
+            },
+            {
+                "command": "vibeguard.autoFix",
+                "title": "VibeGuard: AI Auto-Fix Vulnerability",
+                "icon": "$(wrench)"
+            },
+            {
+                "command": "vibeguard.explainVuln",
+                "title": "VibeGuard: Explain Vulnerability (AI)",
+                "icon": "$(question)"
+            },
+            {
+                "command": "vibeguard.toggleRealtime",
+                "title": "VibeGuard: Toggle Real-time Scanning",
+                "icon": "$(radio-tower)"
             }
         ],
         "menus": {
@@ -110,30 +125,17 @@
                 }
             ],
             "commandPalette": [
-                {
-                    "command": "vibeguard.scanWorkspace"
-                },
-                {
-                    "command": "vibeguard.scanFile"
-                },
-                {
-                    "command": "vibeguard.showReport"
-                },
-                {
-                    "command": "vibeguard.clearDiagnostics"
-                },
-                {
-                    "command": "vibeguard.exportPdfReport"
-                },
-                {
-                    "command": "vibeguard.scanInSystemTerminal"
-                },
-                {
-                    "command": "vibeguard.installPreCommitHook"
-                },
-                {
-                    "command": "vibeguard.showHistory"
-                }
+                { "command": "vibeguard.scanWorkspace" },
+                { "command": "vibeguard.scanFile" },
+                { "command": "vibeguard.showReport" },
+                { "command": "vibeguard.clearDiagnostics" },
+                { "command": "vibeguard.exportPdfReport" },
+                { "command": "vibeguard.scanInSystemTerminal" },
+                { "command": "vibeguard.installPreCommitHook" },
+                { "command": "vibeguard.showHistory" },
+                { "command": "vibeguard.autoFix" },
+                { "command": "vibeguard.explainVuln" },
+                { "command": "vibeguard.toggleRealtime" }
             ]
         },
         "configuration": {
@@ -205,6 +207,18 @@
                     "type": "string",
                     "default": "gemini-2.0-flash",
                     "description": "AI model name for vulnerability analysis."
+                },
+                "vibeguard.backendUrl": {
+                    "type": "string",
+                    "default": "http://localhost:8000",
+                    "description": "CodeShield AI backend URL for auto-fix and explain features."
+                },
+                "vibeguard.realtimeScanDelay": {
+                    "type": "number",
+                    "default": 1500,
+                    "minimum": 500,
+                    "maximum": 10000,
+                    "description": "Delay in milliseconds before triggering real-time scan after typing stops."
                 }
             }
         },

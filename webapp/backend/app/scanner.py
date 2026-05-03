@@ -1,6 +1,6 @@
 """
-CodeShield AI — Scanner Module
-Handles GitHub repo cloning, file walking, rule application, and scoring.
+CodeShield AI — Scanner Module v3.0
+Handles GitHub repo cloning, file walking, rule application (regex + AST), and scoring.
 """
 
 import os
@@ -19,6 +19,7 @@ from .models import (
 )
 from .rules import get_rules_for_extension
 from .security import cleanup_temp_dir, get_repo_name_from_url
+from .ast_analyzer import analyze_with_ast
 
 
 MAX_FILE_SIZE_BYTES = 500_000
@@ -80,17 +81,22 @@ def scan_file(fpath: Path, repo_dir: str) -> Tuple[List[Vulnerability], int]:
     vulns: List[Vulnerability] = []
     ext = fpath.suffix.lower().lstrip(".")
     rules = get_rules_for_extension(ext)
-    if not rules:
-        return [], 0
     try:
         content = fpath.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return [], 0
     lines = content.splitlines()
     rel_path = str(fpath.relative_to(repo_dir)).replace("\\", "/")
+
+    # ── Pass 1: Regex-based rule scan ─────────────────────────────────────────
+    seen_keys: set = set()   # deduplicate by (rule_id, line)
     for rule in rules:
         for line_idx, line in enumerate(lines, start=1):
             if rule.pattern.search(line):
+                key = (rule.id, line_idx)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
                 vulns.append(Vulnerability(
                     id=_make_id(rule.id, rel_path, line_idx),
                     rule_id=rule.id,
@@ -107,6 +113,35 @@ def scan_file(fpath: Path, repo_dir: str) -> Tuple[List[Vulnerability], int]:
                     owasp_category=rule.owasp_category,
                     explain_why=rule.explain_why,
                 ))
+
+    # ── Pass 2: AST-based deeper analysis ─────────────────────────────────────
+    try:
+        ast_findings = analyze_with_ast(content, str(fpath), rel_path)
+        for f in ast_findings:
+            key = (f["rule_id"], f["line"])
+            if key in seen_keys:
+                continue   # already found by regex pass
+            seen_keys.add(key)
+            severity_str = f.get("severity", "MEDIUM")
+            try:
+                sev = VulnerabilitySeverity(severity_str)
+            except ValueError:
+                sev = VulnerabilitySeverity.MEDIUM
+            vulns.append(Vulnerability(
+                id=_make_id(f["rule_id"], rel_path, f["line"]),
+                rule_id=f["rule_id"],
+                rule_name=f["rule_name"],
+                severity=sev,
+                message=f["message"],
+                remediation="Apply the secure alternative shown in the message.",
+                location=VulnerabilityLocation(
+                    file=rel_path, line=f["line"],
+                    snippet=f.get("snippet", ""),
+                ),
+            ))
+    except Exception:
+        pass  # AST pass is best-effort; never block the scan
+
     return vulns, len(lines)
 
 

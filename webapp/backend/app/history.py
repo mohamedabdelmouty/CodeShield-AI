@@ -87,12 +87,58 @@ class ScanHistoryEntry(Base):
             "timestamp":     self.timestamp.isoformat() if self.timestamp else None,
         }
 
+class FixHistoryEntry(Base):
+    __tablename__ = "fix_history"
+
+    id            = Column(String(36), primary_key=True, index=True)
+    vuln_id       = Column(String(64), nullable=False)
+    file_path     = Column(String(512), nullable=False)
+    original_code = Column(Text, nullable=False)
+    fixed_code    = Column(Text, nullable=False)
+    timestamp     = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "vuln_id":       self.vuln_id,
+            "file_path":     self.file_path,
+            "original_code": self.original_code,
+            "fixed_code":    self.fixed_code,
+            "timestamp":     self.timestamp.isoformat() if self.timestamp else None,
+        }
 
 def init_db() -> None:
     """Create all tables if they don't exist."""
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialized: %s", DATABASE_URL)
 
+
+# ─── Fix History Operations ───────────────────────────────────────────────────
+
+def save_fix_history(fix_id: str, vuln_id: str, file_path: str, original: str, fixed: str) -> bool:
+    db: Session = SessionLocal()
+    try:
+        entry = FixHistoryEntry(
+            id=fix_id, vuln_id=vuln_id, file_path=file_path,
+            original_code=original, fixed_code=fixed
+        )
+        db.add(entry)
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to save fix history: %s", exc)
+        return False
+    finally:
+        db.close()
+
+def get_fix_history(fix_id: str) -> Optional[dict]:
+    db: Session = SessionLocal()
+    try:
+        entry = db.query(FixHistoryEntry).filter(FixHistoryEntry.id == fix_id).first()
+        return entry.to_dict() if entry else None
+    finally:
+        db.close()
 
 # ─── CRUD Operations ──────────────────────────────────────────────────────────
 

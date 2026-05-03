@@ -118,6 +118,46 @@ class GitHubPRResult(BaseModel):
     status:    str
 
 
+# ─── Fix Preview / Apply / Rollback Models ────────────────────────────────────
+
+class FixPreviewRequest(BaseModel):
+    vuln: Dict[str, Any]
+
+class FixPreviewResult(BaseModel):
+    original_code: str
+    fixed_code: str
+    diff: str
+    explanation: str
+    breaking_changes: str
+    security_improvement: str
+    model_used: str
+    confidence_score: int
+    risk_level: str
+    vuln_id: str
+    rule_name: str
+    severity: str
+    file: str
+    line: int
+
+class FixApplyRequest(BaseModel):
+    vuln_id: str
+    file_path: str
+    fixed_code: str
+    original_code: str
+
+class FixApplyResult(BaseModel):
+    status: str
+    message: str
+    rollback_id: str
+
+class FixRollbackRequest(BaseModel):
+    rollback_id: str
+
+class FixRollbackResult(BaseModel):
+    status: str
+    message: str
+
+
 # ─── Explanation Models ───────────────────────────────────────────────────────
 
 class ExplainRequest(BaseModel):

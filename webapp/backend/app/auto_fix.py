@@ -63,6 +63,17 @@ def generate_autofix(vuln: Dict[str, Any]) -> Dict[str, Any]:
     fixed_code = fix_result.get("fixed_code", snippet)
     diff_patch = _make_unified_diff(snippet, fixed_code, filename)
 
+    # Derive confidence and risk (either from AI directly, or basic heuristics)
+    confidence = fix_result.get("confidence_score", 85)
+    risk = fix_result.get("risk_level", "Safe")
+
+    # If it's a critical vulnerability or uses eval/exec, lower confidence and increase risk
+    if vuln.get("severity") == "CRITICAL" or "eval" in fixed_code or "exec" in fixed_code:
+        confidence = min(confidence, 60)
+        risk = "Needs Review"
+    if "delete" in fixed_code.lower() or "drop" in fixed_code.lower():
+        risk = "High Risk"
+
     return {
         "original_code":        snippet,
         "fixed_code":           fixed_code,
@@ -71,6 +82,8 @@ def generate_autofix(vuln: Dict[str, Any]) -> Dict[str, Any]:
         "breaking_changes":     fix_result.get("breaking_changes", "None"),
         "security_improvement": fix_result.get("security_improvement", "Reduces attack surface."),
         "model_used":           fix_result.get("model_used", "static"),
+        "confidence_score":     confidence,
+        "risk_level":           risk,
         "vuln_id":              vuln.get("id", ""),
         "rule_name":            vuln.get("rule_name", ""),
         "severity":             vuln.get("severity", ""),

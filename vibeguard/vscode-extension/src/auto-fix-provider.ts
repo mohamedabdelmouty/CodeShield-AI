@@ -8,6 +8,7 @@
  */
 
 import * as vscode from 'vscode';
+import { openRouterService } from './openrouter-service';
 
 /** Shape of the autofix API response */
 interface AutoFixResult {
@@ -146,7 +147,9 @@ export async function executeAutoFix(
         },
         async () => {
             try {
-                const result = await _fetchFix(vuln);
+                // Read the file content to provide context for OpenRouter
+                const fileContent = document.getText();
+                const result = await _fetchFix(vuln, fileContent);
                 await _showFixPreview(document, diag, vuln, result);
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
@@ -156,9 +159,21 @@ export async function executeAutoFix(
     );
 }
 
-/** Call the CodeShield backend /api/fix */
-async function _fetchFix(vuln: VulnData): Promise<AutoFixResult> {
+/** Call the CodeShield backend /api/fix or use OpenRouter */
+async function _fetchFix(vuln: VulnData, fileContent: string = ''): Promise<AutoFixResult> {
     const config = vscode.workspace.getConfiguration('vibeguard');
+    const provider = config.get<string>('aiProvider') || 'Gemini';
+
+    if (provider === 'OpenRouter') {
+        const orResult = await openRouterService.autoFixCode(vuln, fileContent);
+        return {
+            fixed_code: orResult.fixed_code,
+            explanation: orResult.explanation,
+            security_improvement: 'Resolved vulnerability via OpenRouter AI',
+            model_used: 'OpenRouter (' + config.get<string>('openRouterModel') + ')'
+        };
+    }
+
     const backendUrl = config.get<string>('backendUrl', BACKEND_URL);
 
     const resp = await fetch(`${backendUrl}/api/fix`, {

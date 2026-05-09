@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time AI-powered security vulnerability detection — SQL Injection, XSS, Secrets, Auto-Fix, and more. Powered by CodeShield AI.",
-    "version": "3.0.1",
+    "version": "3.1.0",
     "icon": "icon.png",
     "publisher": "vibeguardapp",
     "galleryBanner": {
@@ -15,6 +15,12 @@
     "categories": [
         "Linters",
         "Other"
+    ],
+    "files": [
+        "dist",
+        "icon.png",
+        "README.md",
+        "package.json"
     ],
     "keywords": [
         "security",
@@ -101,6 +107,11 @@
                 "icon": "$(question)"
             },
             {
+                "command": "vibeguard.focusChat",
+                "title": "VibeGuard: Focus AI Chat View",
+                "icon": "$(comment-discussion)"
+            },
+            {
                 "command": "vibeguard.toggleRealtime",
                 "title": "VibeGuard: Toggle Real-time Scanning",
                 "icon": "$(radio-tower)"
@@ -126,17 +137,42 @@
                 }
             ],
             "commandPalette": [
-                { "command": "vibeguard.scanWorkspace" },
-                { "command": "vibeguard.scanFile" },
-                { "command": "vibeguard.showReport" },
-                { "command": "vibeguard.clearDiagnostics" },
-                { "command": "vibeguard.exportPdfReport" },
-                { "command": "vibeguard.scanInSystemTerminal" },
-                { "command": "vibeguard.installPreCommitHook" },
-                { "command": "vibeguard.showHistory" },
-                { "command": "vibeguard.autoFix" },
-                { "command": "vibeguard.explainVuln" },
-                { "command": "vibeguard.toggleRealtime" }
+                {
+                    "command": "vibeguard.scanWorkspace"
+                },
+                {
+                    "command": "vibeguard.scanFile"
+                },
+                {
+                    "command": "vibeguard.showReport"
+                },
+                {
+                    "command": "vibeguard.clearDiagnostics"
+                },
+                {
+                    "command": "vibeguard.exportPdfReport"
+                },
+                {
+                    "command": "vibeguard.scanInSystemTerminal"
+                },
+                {
+                    "command": "vibeguard.installPreCommitHook"
+                },
+                {
+                    "command": "vibeguard.showHistory"
+                },
+                {
+                    "command": "vibeguard.autoFix"
+                },
+                {
+                    "command": "vibeguard.explainVuln"
+                },
+                {
+                    "command": "vibeguard.focusChat"
+                },
+                {
+                    "command": "vibeguard.toggleRealtime"
+                }
             ]
         },
         "configuration": {
@@ -192,7 +228,23 @@
                 "vibeguard.enableAi": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable AI-powered vulnerability detection using Gemini (works automatically after install)."
+                    "description": "Enable AI-powered vulnerability detection (works automatically after install)."
+                },
+                "vibeguard.aiProvider": {
+                    "type": "string",
+                    "enum": ["Gemini", "OpenRouter"],
+                    "default": "Gemini",
+                    "description": "Select the AI provider for Chat, Auto-Fix, and Explain features."
+                },
+                "vibeguard.openRouterApiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Optional: Override the OpenRouter API key. Leave empty to use OPENROUTER_API_KEY env."
+                },
+                "vibeguard.openRouterModel": {
+                    "type": "string",
+                    "default": "deepseek/deepseek-chat:free",
+                    "description": "OpenRouter model name for vulnerability analysis."
                 },
                 "vibeguard.aiEndpoint": {
                     "type": "string",
@@ -276,5 +328,8 @@
         "url": "https://github.com/vibeguard/vibeguard/issues"
     },
     "homepage": "https://github.com/vibeguard/vibeguard#readme",
-    "qna": "marketplace"
+    "qna": "marketplace",
+    "dependencies": {
+        "openai": "^6.37.0"
+    }
 }

@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -231,3 +232,9 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": f"Internal server error: {str(exc)}"}
     )
+
+# ─── Static Files (Frontend) ──────────────────────────────────────────────────
+import os
+frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")

@@ -85,7 +85,7 @@ RULES: List[SecurityRule] = [
         cwe_id="CWE-798",
         owasp_category="A07:2021 Identification and Authentication Failures",
         explain_why="Hardcoded secrets in source code are trivially discoverable via GitHub search, git history, or decompilation. Attackers automate scanning for these patterns.",
-        languages=["py", "js", "ts", "java", "rb", "go", "php", "cs", "cpp", "c"],
+        languages=["py", "js", "ts", "java", "rb", "go", "php", "cs", "cpp", "c", "dart"],
     ),
 
     SecurityRule(
@@ -99,7 +99,7 @@ RULES: List[SecurityRule] = [
         cwe_id="CWE-259",
         owasp_category="A07:2021 Identification and Authentication Failures",
         explain_why="Hardcoded passwords cannot be rotated without a code change and deployment. They are permanently stored in git history even after deletion.",
-        languages=["py", "js", "ts", "java", "rb", "go", "php", "cs"],
+        languages=["py", "js", "ts", "java", "rb", "go", "php", "cs", "dart"],
     ),
 
     # ─── Insecure Functions ────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ RULES: List[SecurityRule] = [
         cwe_id="CWE-22",
         owasp_category="A01:2021 Broken Access Control",
         explain_why="Path traversal lets attackers read sensitive files outside the web root like /etc/passwd, SSH keys, or application config files.",
-        languages=["py", "php", "js", "ts", "java", "rb"],
+        languages=["py", "php", "js", "ts", "java", "rb", "dart"],
     ),
 
     # ─── Insecure Random ───────────────────────────────────────────────────────
@@ -218,7 +218,121 @@ RULES: List[SecurityRule] = [
         cwe_id="CWE-532",
         owasp_category="A09:2021 Security Logging and Monitoring Failures",
         explain_why="Log files are often stored insecurely, rotated to cold storage, or accessible to support teams. Logging passwords means they can be extracted from log management systems.",
-        languages=["py", "js", "ts", "java", "go", "rb", "php"],
+        languages=["py", "js", "ts", "java", "go", "rb", "php", "dart"],
+    ),
+
+    # ─── Dart-Specific Rules ──────────────────────────────────────────────────
+    SecurityRule(
+        id="CS-DART-001",
+        name="Dart Command Injection",
+        severity="CRITICAL",
+        pattern=_r(r'\bProcess\s*\.\s*(run|start|runSync)\s*\('),
+        message="Process execution detected. Ensure arguments are not user-controlled.",
+        remediation="Always pass arguments as a fixed list, never concatenate user input into command strings.",
+        remediation_code='// BAD: Process.run("ls " + userInput, [])\n// GOOD: Process.run("ls", [userInput])',
+        cwe_id="CWE-78",
+        owasp_category="A03:2021 Injection",
+        explain_why="Process.run() executes shell commands. Passing untrusted input enables command injection.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-002",
+        name="Dart Insecure HTTP Usage",
+        severity="HIGH",
+        pattern=_r(r'["\']http:\/\/(?!localhost|127\.0\.0\.1)'),
+        message="Plain HTTP URL found. Data is transmitted without encryption.",
+        remediation="Replace all http:// URLs with https://.",
+        remediation_code=None,
+        cwe_id="CWE-319",
+        owasp_category="A02:2021 Cryptographic Failures",
+        explain_why="Using HTTP instead of HTTPS exposes data to interception.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-003",
+        name="Dart SSL Certificate Bypass",
+        severity="CRITICAL",
+        pattern=_r(r'badCertificateCallback\s*=\s*\([^)]*\)\s*=>\s*true|badCertificateCallback\s*=\s*\(_[^)]*\)\s*\{?\s*return\s+true'),
+        message="SSL certificate verification disabled. All certificates are accepted.",
+        remediation="Remove the badCertificateCallback override or implement proper pinning.",
+        remediation_code=None,
+        cwe_id="CWE-295",
+        owasp_category="A02:2021 Cryptographic Failures",
+        explain_why="Setting badCertificateCallback to always return true exposes the app to MITM attacks.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-005",
+        name="Dart Insecure Random",
+        severity="MEDIUM",
+        pattern=_r(r'\bRandom\s*\(\s*\)\s*\.\s*(nextInt|nextDouble|nextBool)|new\s+Random\s*\('),
+        message="math.Random() used. Not suitable for cryptographic operations.",
+        remediation="Use dart:math Random.secure() for cryptographically secure random numbers.",
+        remediation_code='// BAD: final random = Random();\n// GOOD: final random = Random.secure();',
+        cwe_id="CWE-338",
+        owasp_category="A02:2021 Cryptographic Failures",
+        explain_why="dart:math Random is pseudo-random and should not be used for tokens/sessions.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-006",
+        name="Dart SQL Injection",
+        severity="CRITICAL",
+        pattern=_r(r'\b(?:rawQuery|rawInsert|rawUpdate|rawDelete|execute)\s*\(\s*[\'"`][^\'"`)]*\$[^\'"`)]*[\'"`]'),
+        message="Raw SQL query with string interpolation detected.",
+        remediation="Use parameterized queries in sqflite.",
+        remediation_code='// BAD: db.rawQuery("SELECT * FROM t WHERE id = $userId")\n// GOOD: db.rawQuery("SELECT * FROM t WHERE id = ?", [userId])',
+        cwe_id="CWE-89",
+        owasp_category="A03:2021 Injection",
+        explain_why="String interpolation in SQL queries allows SQL injection.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-008",
+        name="Dart Insecure Local Storage",
+        severity="MEDIUM",
+        pattern=_r(r'SharedPreferences.*\.\s*set(?:String|Int|Bool|Double)\s*\(\s*[\'"][^\'"]*(?:password|secret|token|key|auth|credential)[^\'"]*[\'"]'),
+        message="Sensitive data stored in SharedPreferences. Data is unencrypted on disk.",
+        remediation="Use the flutter_secure_storage package for sensitive credentials.",
+        remediation_code=None,
+        cwe_id="CWE-312",
+        owasp_category="A02:2021 Cryptographic Failures",
+        explain_why="SharedPreferences stores data in plain text XML files, exposing passwords/tokens.",
+        languages=["dart"],
+    ),
+
+    SecurityRule(
+        id="CS-DART-010",
+        name="Dart Unconfigured HttpClient",
+        severity="LOW",
+        pattern=_r(r'\bHttpClient\s*\(\s*\)'),
+        message="HttpClient created. Ensure proper TLS and certificate settings are configured.",
+        remediation="Configure HttpClient with appropriate security settings or use dio.",
+        remediation_code=None,
+        cwe_id="CWE-16",
+        owasp_category="A05:2021 Security Misconfiguration",
+        explain_why="Implicit HttpClient may result in insecure defaults.",
+        languages=["dart"],
+    ),
+
+    # ─── Package Dependencies ─────────────────────────────────────────────────
+    SecurityRule(
+        id="CS-PKG-001",
+        name="Vulnerable Dependency",
+        severity="MEDIUM",
+        pattern=_r(r'["\']uuid["\']\s*:\s*["\']\^?9\.0\.1["\']'),
+        message="uuid@9.0.1 has a known vulnerability: GHSA-w5hq-q745-h8pq",
+        remediation="Review and update uuid to a patched version. Check OSV for details.",
+        remediation_code=None,
+        cwe_id="CWE-1104",
+        owasp_category="A06:2021 Vulnerable and Outdated Components",
+        explain_why="Using outdated components with known vulnerabilities exposes the application to public exploits.",
+        languages=["json"],
     ),
 ]
 

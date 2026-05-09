@@ -111,10 +111,26 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.registerWebviewViewProvider(VibeguardChatProvider.viewType, chatProvider)
     );
 
-    // Command to open chat
+    // Command to open/focus the VibeGuard AI Chat sidebar
     context.subscriptions.push(
-        vscode.commands.registerCommand('vibeguard.askAi', (vuln: any) => {
-            chatProvider.sendToChat(vuln);
+        vscode.commands.registerCommand('vibeguard.focusChat', async () => {
+            // Reveal the sidebar container first, then focus the chat view
+            await vscode.commands.executeCommand('workbench.view.extension.vibeguard-sidebar');
+            await vscode.commands.executeCommand('vibeguard.chatView.focus');
+        })
+    );
+
+    // Command to send a vulnerability to the AI chat
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vibeguard.askAi', async (vuln?: any) => {
+            // If called from Command Palette without args, just open the chat
+            if (!vuln) {
+                await vscode.commands.executeCommand('vibeguard.focusChat');
+                return;
+            }
+            // Reveal the chat first, then send the context
+            await vscode.commands.executeCommand('vibeguard.focusChat');
+            setTimeout(() => chatProvider.sendToChat(vuln), 400);
         })
     );
 
@@ -246,7 +262,41 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'vibeguard.autoFix',
-            async (docUri: vscode.Uri, diag: vscode.Diagnostic, vuln: any) => {
+            async (docUri?: vscode.Uri, diag?: vscode.Diagnostic, vuln?: any) => {
+                // Called from Command Palette — no arguments passed
+                if (!vuln) {
+                    const editor = vscode.window.activeTextEditor;
+                    if (!editor) {
+                        vscode.window.showWarningMessage('VibeGuard: Place cursor on a flagged line to auto-fix.');
+                        return;
+                    }
+                    const line = editor.selection.active.line + 1;
+                    const uri  = editor.document.uri;
+
+                    // Search vulnDataMap for a match on the current cursor line
+                    for (const [key, v] of vulnDataMap.entries()) {
+                        if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
+                            vuln = v;
+                            break;
+                        }
+                    }
+
+                    if (!vuln) {
+                        vscode.window.showWarningMessage('VibeGuard: No vulnerability found at cursor. Scan the file first.');
+                        return;
+                    }
+
+                    // Build a synthetic diagnostic covering the current line
+                    const lineRange = editor.document.lineAt(editor.selection.active.line).range;
+                    diag = new vscode.Diagnostic(lineRange, vuln.message ?? 'Security vulnerability', vscode.DiagnosticSeverity.Warning);
+                    docUri = uri;
+                }
+
+                if (!docUri || !diag || !vuln) {
+                    vscode.window.showWarningMessage('VibeGuard: Unable to determine vulnerability context.');
+                    return;
+                }
+
                 const doc = await vscode.workspace.openTextDocument(docUri);
                 await executeAutoFix(doc, diag, vuln);
             }
@@ -266,8 +316,7 @@ export function activate(context: vscode.ExtensionContext): void {
                         return;
                     }
                     const line = editor.selection.active.line + 1;
-                    const uri = editor.document.uri;
-                    // Find a matching vuln in the map
+                    const uri  = editor.document.uri;
                     for (const [key, v] of vulnDataMap.entries()) {
                         if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
                             vuln = v;
@@ -279,7 +328,23 @@ export function activate(context: vscode.ExtensionContext): void {
                     vscode.window.showWarningMessage('VibeGuard: No vulnerability found at cursor. Scan the file first.');
                     return;
                 }
-                await showExplainPanel(context, vuln);
+                // Normalize: @vibeguard/core uses camelCase, explain-panel expects snake_case
+                const normalized = {
+                    id:             vuln.id ?? vuln.rule_id ?? vuln.ruleId ?? 'unknown',
+                    rule_id:        vuln.rule_id ?? vuln.ruleId ?? 'unknown',
+                    rule_name:      vuln.rule_name ?? vuln.ruleName ?? vuln.ruleId ?? 'Security Issue',
+                    severity:       vuln.severity ?? 'LOW',
+                    message:        vuln.message ?? '',
+                    remediation:    vuln.remediation ?? '',
+                    cwe_id:         vuln.cwe_id ?? vuln.cweId,
+                    owasp_category: vuln.owasp_category ?? vuln.owaspCategory,
+                    location: {
+                        file:    vuln.location?.file ?? '',
+                        line:    vuln.location?.line ?? 1,
+                        snippet: vuln.location?.snippet ?? vuln.snippet,
+                    },
+                };
+                await showExplainPanel(context, normalized);
             }
         )
     );
@@ -496,12 +561,14 @@ function openSystemTerminalAndScan(folderPath: string): void {
     const command = 'npx vibeguard scan .';
 
     if (isWin) {
-        const safePath = folderPath.replace(/"/g, '""');
-        const kArg = `cd /d "${safePath}" && ${command}`;
-        spawn('cmd', ['/c', 'start', 'VibeGuard Scan', 'cmd', '/k', kArg], {
+        // On Windows, build the entire command as a single string for shell execution.
+        // Quotes around the path handle spaces. Double-quotes the title for 'start'.
+        const safePath = folderPath.replace(/"/g, '\\"');
+        const fullCmd = `start "VibeGuard Scan" cmd /k "cd /d \"${safePath}\" && ${command}"`;
+        spawn('cmd', ['/c', fullCmd], {
             detached: true,
             stdio: 'ignore',
-            shell: false,
+            shell: true,
         }).unref();
     } else if (process.platform === 'darwin') {
         const escapedPath = folderPath.replace(/'/g, "''");

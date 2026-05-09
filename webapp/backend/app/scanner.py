@@ -32,6 +32,7 @@ IGNORE_DIRS = {
 SCANNABLE_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
     ".java", ".php", ".rb", ".go", ".cs", ".cpp", ".c", ".html",
+    ".dart", ".yaml", ".yml", ".json", ".sh"
 }
 SEVERITY_WEIGHTS = {
     "CRITICAL": 25, "HIGH": 15, "MEDIUM": 7, "LOW": 3, "INFO": 1,
@@ -148,11 +149,23 @@ def scan_file(fpath: Path, repo_dir: str) -> Tuple[List[Vulnerability], int]:
 def calculate_score(vulns: List[Vulnerability]) -> RiskScore:
     if not vulns:
         return RiskScore(score=100, grade="A", passed=True, label="No vulnerabilities found")
-    penalty = sum(SEVERITY_WEIGHTS.get(v.severity.value, 1) for v in vulns)
-    score = max(0, 100 - penalty)
+    
+    raw_penalty = sum(SEVERITY_WEIGHTS.get(v.severity.value, 1) for v in vulns)
+    
+    # Asymptotic decay formula: score = 100 / (1 + penalty / 150)
+    score = int(100 / (1 + (raw_penalty / 150.0)))
+    # Ensure it never goes below 1 for aesthetic reasons, unless there are no vulns
+    score = max(1, score)
+
     grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 35 else "F"
     passed = score >= 70
-    labels = {"A": "Excellent", "B": "Good", "C": "Fair — Action recommended", "D": "Poor", "F": "Critical — Immediate action"}
+    labels = {
+        "A": "Excellent", 
+        "B": "Good", 
+        "C": "Fair — Action recommended", 
+        "D": "Poor", 
+        "F": "Critical — Immediate action"
+    }
     return RiskScore(score=score, grade=grade, passed=passed, label=labels[grade])
 
 

@@ -8,6 +8,7 @@
  */
 
 import * as vscode from 'vscode';
+import { openRouterService } from './openrouter-service';
 
 interface ExplainResult {
     vuln_id: string;
@@ -75,20 +76,36 @@ export async function showExplainPanel(
     // Fetch explanation async
     try {
         const config = vscode.workspace.getConfiguration('vibeguard');
-        const backendUrl = config.get<string>('backendUrl', BACKEND_URL);
+        const provider = config.get<string>('aiProvider') || 'Gemini';
 
-        const resp = await fetch(`${backendUrl}/api/explain`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vuln }),
-            signal: AbortSignal.timeout(30_000),
-        });
-
-        if (resp.ok) {
-            const result = (await resp.json()) as ExplainResult;
+        if (provider === 'OpenRouter') {
+            const orResult = await openRouterService.explainVulnerability(vuln as any);
+            const result: ExplainResult = {
+                vuln_id: vuln.id,
+                why_dangerous: orResult.explanation,
+                attack_scenario: 'OpenRouter Explanation (See Above)',
+                best_practices: ['Review OpenRouter suggestions', 'Apply Secure Coding Guidelines'],
+                severity_rationale: `Assigned severity: ${vuln.severity}`,
+                references: vuln.cwe_id ? [`https://cwe.mitre.org/data/definitions/${vuln.cwe_id.replace('CWE-', '')}.html`] : [],
+                model_used: 'OpenRouter (' + config.get<string>('openRouterModel') + ')'
+            };
             panel.webview.html = _buildHtml(vuln, result);
         } else {
-            panel.webview.html = _errorHtml(vuln, `Backend returned ${resp.status}`);
+            const backendUrl = config.get<string>('backendUrl', BACKEND_URL);
+
+            const resp = await fetch(`${backendUrl}/api/explain`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vuln }),
+                signal: AbortSignal.timeout(30_000),
+            });
+
+            if (resp.ok) {
+                const result = (await resp.json()) as ExplainResult;
+                panel.webview.html = _buildHtml(vuln, result);
+            } else {
+                panel.webview.html = _errorHtml(vuln, `Backend returned ${resp.status}`);
+            }
         }
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

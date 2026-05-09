@@ -7,6 +7,7 @@
 
 import * as vscode from 'vscode';
 import { Vulnerability, VulnerabilitySeverity, SecurityReport } from '@vibeguard/core';
+import { vulnDataMap, diagKey } from './auto-fix-provider';
 
 // ─── Severity Mapping ─────────────────────────────────────────────────────────
 
@@ -58,9 +59,10 @@ export class VibeguardDiagnosticsProvider {
                 toDiagnosticSeverity(vuln.severity)
             );
 
-            diagnostic.source = `VibeGuard (${vuln.ruleId})`;
+            // Source must exactly match DIAGNOSTIC_SOURCE in auto-fix-provider
+            diagnostic.source = 'VibeGuard';
             diagnostic.code = {
-                value: vuln.cweId ?? vuln.ruleId,
+                value: vuln.ruleId,
                 target: vuln.cweId
                     ? vscode.Uri.parse(`https://cwe.mitre.org/data/definitions/${vuln.cweId.replace('CWE-', '')}.html`)
                     : vscode.Uri.parse('https://github.com/vibeguard/vibeguard'),
@@ -73,6 +75,25 @@ export class VibeguardDiagnosticsProvider {
                     `Remediation: ${vuln.remediation}`
                 ),
             ];
+
+            // Populate vulnDataMap so autoFix & explainVuln can find this vuln
+            const key = diagKey(document.uri, loc.line, vuln.ruleId);
+            vulnDataMap.set(key, {
+                id:             vuln.id ?? vuln.ruleId,
+                rule_id:        vuln.ruleId,
+                rule_name:      (vuln as any).ruleName ?? (vuln as any).rule_name ?? vuln.ruleId,
+                severity:       vuln.severity,
+                message:        vuln.message,
+                remediation:    vuln.remediation ?? '',
+                remediation_code: (vuln as any).remediation_code,
+                cwe_id:         vuln.cweId,
+                owasp_category: (vuln as any).owaspCategory ?? (vuln as any).owasp_category,
+                location: {
+                    file:    document.uri.fsPath,
+                    line:    loc.line,
+                    snippet: (vuln as any).snippet ?? (vuln.location as any)?.snippet,
+                },
+            });
 
             return diagnostic;
         });
@@ -113,13 +134,34 @@ export class VibeguardDiagnosticsProvider {
                     toDiagnosticSeverity(vuln.severity)
                 );
 
-                diagnostic.source = `VibeGuard (${vuln.ruleId})`;
+                // Source must exactly match DIAGNOSTIC_SOURCE in auto-fix-provider
+                diagnostic.source = 'VibeGuard';
                 diagnostic.code = {
-                    value: vuln.cweId ?? vuln.ruleId,
+                    value: vuln.ruleId,
                     target: vuln.cweId
                         ? vscode.Uri.parse(`https://cwe.mitre.org/data/definitions/${vuln.cweId.replace('CWE-', '')}.html`)
                         : vscode.Uri.parse('https://github.com/vibeguard/vibeguard'),
                 };
+
+                // Populate vulnDataMap for workspace-wide vulns too
+                const fileUri = vscode.Uri.file(filePath);
+                const key = diagKey(fileUri, vuln.location.line, vuln.ruleId);
+                vulnDataMap.set(key, {
+                    id:             vuln.id ?? vuln.ruleId,
+                    rule_id:        vuln.ruleId,
+                    rule_name:      (vuln as any).ruleName ?? (vuln as any).rule_name ?? vuln.ruleId,
+                    severity:       vuln.severity,
+                    message:        vuln.message,
+                    remediation:    vuln.remediation ?? '',
+                    remediation_code: (vuln as any).remediation_code,
+                    cwe_id:         vuln.cweId,
+                    owasp_category: (vuln as any).owaspCategory ?? (vuln as any).owasp_category,
+                    location: {
+                        file:    filePath,
+                        line:    vuln.location.line,
+                        snippet: (vuln as any).snippet ?? (vuln.location as any)?.snippet,
+                    },
+                });
 
                 return diagnostic;
             });
@@ -149,6 +191,7 @@ export class VibeguardDiagnosticsProvider {
         this._diagnosticCollection.clear();
         this._fileDiagnostics.clear();
         this._lastReport = null;
+        vulnDataMap.clear(); // also clear the auto-fix map
     }
 
     dispose(): void {

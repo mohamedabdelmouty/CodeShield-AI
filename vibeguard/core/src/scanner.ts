@@ -108,16 +108,18 @@ async function discoverFiles(target: string, ignore: string[]): Promise<string[]
 
 // ─── Scanner ─────────────────────────────────────────────────────────────────
 
-let _vulnIdCounter = 0;
-
-function makeVulnId(): string {
-    return `VG-${String(++_vulnIdCounter).padStart(5, '0')}`;
+// Fix: race condition in parallel scans — replaced module-level mutable counter
+// with a local closure factory so each scan() / scanCode() gets its own independent counter.
+function makeIdGenerator(): () => string {
+    let counter = 0;
+    return () => `VG-${String(++counter).padStart(5, '0')}`;
 }
 
 async function scanFile(
     filePath: string,
     rules: Rule[],
-    options: ScanOptions
+    options: ScanOptions,
+    makeVulnId: () => string   // Fix: race condition — generator is passed in, not shared globally
 ): Promise<{ vulnerabilities: Vulnerability[]; linesScanned: number }> {
     const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
     const absolutePath = path.resolve(filePath);
@@ -178,9 +180,21 @@ async function scanFile(
                     model: options.aiModel,
                 }
             );
-            // Replace static findings with AI enriched ones
-            vulnerabilities.length = 0;
-            vulnerabilities.push(...aiFindings);
+            // Fix: silent AI data loss — only replace static findings when AI returned results.
+            // If aiFindings is unexpectedly empty, keep the static findings untouched.
+            if (aiFindings.length >= vulnerabilities.length) {
+                // AI returned at least as many findings — safe to replace
+                vulnerabilities.length = 0;
+                vulnerabilities.push(...aiFindings);
+            } else if (aiFindings.length > 0) {
+                // AI returned fewer findings — use AI results but warn the user
+                vulnerabilities.length = 0;
+                vulnerabilities.push(...aiFindings);
+                console.warn(`[VibeGuard] AI returned fewer findings (${aiFindings.length}) than static scan. Using AI results.`);
+            } else {
+                // AI returned nothing — keep static findings untouched
+                console.warn(`[VibeGuard] AI enrichment returned empty results for ${filePath}. Keeping static findings.`);
+            }
         } catch (err: any) {
             // Keep the static vulnerabilities, just log the AI warning
             console.warn(`[VibeGuard] AI enrichment failed for ${filePath}:`, err);
@@ -204,7 +218,8 @@ function getSnippet(lines: string[], startLine: number, endLine?: number): strin
  */
 export async function scan(options: ScanOptions): Promise<SecurityReport> {
     const startTime = Date.now();
-    _vulnIdCounter = 0;
+    // Fix: race condition — each scan() call gets its own local ID generator
+    const makeVulnId = makeIdGenerator();
 
     // Load and filter rules
     const allRules = getAllRules();
@@ -229,7 +244,7 @@ export async function scan(options: ScanOptions): Promise<SecurityReport> {
 
     for (const file of files) {
         try {
-            const { vulnerabilities, linesScanned } = await scanFile(file, rulesToRun, options);
+            const { vulnerabilities, linesScanned } = await scanFile(file, rulesToRun, options, makeVulnId);
             allVulnerabilities.push(...vulnerabilities);
             totalLinesScanned += linesScanned;
         } catch {
@@ -290,7 +305,8 @@ export async function scanCode(
     filePath: string,
     options?: ScanOptions
 ): Promise<Vulnerability[]> {
-    _vulnIdCounter = 0;
+    // Fix: race condition — scanCode() gets its own local ID generator, independent of scan()
+    const makeVulnId = makeIdGenerator();
     const allRules = getAllRules();
     const rulesToRun = options?.rules && options.rules.length > 0
         ? allRules.filter((r) => options.rules!.includes(r.id))
@@ -340,8 +356,17 @@ export async function scanCode(
                     model: options.aiModel,
                 }
             );
-            vulnerabilities.length = 0;
-            vulnerabilities.push(...aiFindings);
+            // Fix: silent AI data loss (scanCode) — same safe merge logic as scanFile
+            if (aiFindings.length >= vulnerabilities.length) {
+                vulnerabilities.length = 0;
+                vulnerabilities.push(...aiFindings);
+            } else if (aiFindings.length > 0) {
+                vulnerabilities.length = 0;
+                vulnerabilities.push(...aiFindings);
+                console.warn(`[VibeGuard] AI returned fewer findings (${aiFindings.length}) than static scan. Using AI results.`);
+            } else {
+                console.warn(`[VibeGuard] AI enrichment returned empty results for ${filePath}. Keeping static findings.`);
+            }
         } catch (err: any) {
             console.warn(`[VibeGuard] AI enrichment failed for ${filePath}:`, err);
         }

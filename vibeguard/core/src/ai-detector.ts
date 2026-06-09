@@ -99,7 +99,11 @@ export async function enrichWithAi(
     if (!content.trim()) return vulnerabilities;
 
     const rawFindings = parseFindings(content);
-    
+
+    // Fix: silent AI data loss — if the AI response was malformed or empty, return the original
+    // static findings to prevent silent data loss. The caller (scanFile) will decide what to do.
+    if (rawFindings.length === 0) return vulnerabilities;
+
     // Merge AI findings with the original static ones
     return vulnerabilities.map(vuln => {
         const enriched = rawFindings.find(r => r.id === vuln.id);

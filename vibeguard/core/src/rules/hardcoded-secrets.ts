@@ -42,8 +42,9 @@ const SECRET_KEY_PATTERNS = [
 const SECRET_VALUE_PATTERNS = [
     // AWS Secret Access Key
     /(?<![A-Z0-9])[A-Z0-9]{20}(?![A-Z0-9])/,
-    // Generic high-entropy base64-like string (length > 20)
-    /^[A-Za-z0-9+/=]{20,}$/,
+    // Fix: base64 false positives — narrowed from {20,} to {40,100} to avoid matching
+    // data URIs, encoded images, SVG data, fonts, etc. Real API keys are rarely > 100 chars.
+    /^[A-Za-z0-9+/=]{40,100}$/,
     // JWT-like tokens
     /^eyJ[A-Za-z0-9_-]{10,}/,
     // GitHub/npm tokens
@@ -54,6 +55,28 @@ const SECRET_VALUE_PATTERNS = [
     /^[A-Za-z0-9!@#$%^&*_\-+=]{16,}$/,
 ];
 
+// Fix: base64 false positives — variable/property names that indicate non-secret data
+// (encoded assets, data URIs, image blobs, etc.) to exclude from secret detection.
+const NON_SECRET_KEY_PATTERNS: RegExp[] = [
+    /^data$/i,
+    /content/i,
+    /payload/i,
+    /encoded/i,
+    /image/i,
+    /icon/i,
+    /svg/i,
+    /font/i,
+    /base64/i,
+    /buffer/i,
+    /blob/i,
+    /chunk/i,
+];
+
+// Fix: base64 false positives — helper to identify variable names that belong to non-secret data
+function isNonSecretKeyName(name: string): boolean {
+    return NON_SECRET_KEY_PATTERNS.some((p) => p.test(name));
+}
+
 const PLACEHOLDER_VALUES = [
     'yourpassword', 'your_password', 'password123', 'changeme',
     'secret', 'example', 'placeholder', 'xxxx', 'test',
@@ -63,6 +86,9 @@ const PLACEHOLDER_VALUES = [
 
 function isLikelyRealSecret(value: string): boolean {
     if (value.length < 8) return false;
+    // Fix: base64 false positives — data URIs and encoded assets are usually very long strings.
+    // Values over 500 chars are almost certainly not real secrets.
+    if (value.length > 500) return false;
     const lower = value.toLowerCase();
     for (const placeholder of PLACEHOLDER_VALUES) {
         if (lower === placeholder.toLowerCase()) return false;
@@ -110,6 +136,8 @@ const hardcodedSecretsRule: Rule = {
 
                 const name = extractIdentifierName(id);
                 if (!name || !isSecretKeyName(name)) return;
+                // Fix: base64 false positives — skip variables whose name suggests non-secret data
+                if (isNonSecretKeyName(name)) return;
                 if (!isLikelyRealSecret(init.value)) return;
 
                 const loc = nodePath.node.loc;
@@ -138,6 +166,8 @@ const hardcodedSecretsRule: Rule = {
 
                 const name = extractIdentifierName(left);
                 if (!name || !isSecretKeyName(name)) return;
+                // Fix: base64 false positives — skip variables whose name suggests non-secret data
+                if (isNonSecretKeyName(name)) return;
                 if (!isLikelyRealSecret(right.value)) return;
 
                 const loc = nodePath.node.loc;
@@ -166,6 +196,8 @@ const hardcodedSecretsRule: Rule = {
 
                 const name = extractIdentifierName(key);
                 if (!name || !isSecretKeyName(name)) return;
+                // Fix: base64 false positives — skip properties whose name suggests non-secret data
+                if (isNonSecretKeyName(name)) return;
                 if (!isLikelyRealSecret(value.value)) return;
 
                 const loc = nodePath.node.loc;

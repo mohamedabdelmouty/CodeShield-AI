@@ -15,6 +15,9 @@ New in v3.0:
 """
 
 import logging
+import os
+import json
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -64,9 +67,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Fix A2: read allowed origins from env var — never open to all in production
+# Set ALLOWED_ORIGINS env var in production (comma-separated list)
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,6 +116,58 @@ async def scan_repository(request: Request, body: ScanRequest):
     except Exception as e:
         logger.error("Scan failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+
+
+# Fix A5: SSE streaming endpoint — streams real progress then the final result.
+# Keep /api/scan unchanged above; this is an additive endpoint for the frontend.
+from fastapi.responses import StreamingResponse
+
+@app.post("/api/scan/stream")
+async def scan_repository_stream(request: Request, body: ScanRequest):
+    """SSE endpoint — streams progress events then the final scan result as JSON."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests.")
+    is_valid, error = validate_github_url(body.repo_url)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error)
+
+    async def event_stream():
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        def progress_cb(event_type: str, data: dict):
+            # Called from the thread-pool thread — safely hand off to the event loop
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": event_type, **data})
+
+        async def run_scan():
+            try:
+                result = await loop.run_in_executor(
+                    executor, lambda: scan_repo(body.repo_url, progress_cb)
+                )
+                result_dict = result.model_dump()
+                history_id = save_scan(result_dict)
+                result.history_id = history_id
+                await queue.put({"type": "result", "data": result_dict})
+            except Exception as exc:
+                logger.error("SSE scan failed: %s", exc, exc_info=True)
+                await queue.put({"type": "error", "message": str(exc)})
+
+        asyncio.create_task(run_scan())
+
+        while True:
+            msg = await queue.get()
+            yield f"data: {json.dumps(msg)}\n\n"
+            if msg["type"] in ("result", "error"):
+                break
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 
 # ─── Auto-Fix Endpoints ───────────────────────────────────────────────────────
 

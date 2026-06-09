@@ -169,21 +169,44 @@ def calculate_score(vulns: List[Vulnerability]) -> RiskScore:
     return RiskScore(score=score, grade=grade, passed=passed, label=labels[grade])
 
 
-def scan_repo(repo_url: str) -> ScanResult:
+def scan_repo(repo_url: str, progress_cb=None) -> ScanResult:
+    """Scan a GitHub repository. progress_cb(event_type, data) is called at key milestones."""
     start_ms = time.time()
     repo_dir: Optional[str] = None
     try:
         repo_dir = clone_repo(repo_url)
+        # Fix A5: emit clone_done milestone
+        if progress_cb:
+            progress_cb("clone_done", {"message": "Repository cloned"})
+
         files = collect_files(repo_dir)
+        total = len(files)
         all_vulns: List[Vulnerability] = []
         total_lines = 0
         affected: set = set()
-        for fpath in files:
+
+        for idx, fpath in enumerate(files):
             fv, lc = scan_file(fpath, repo_dir)
             all_vulns.extend(fv)
             total_lines += lc
             if fv:
                 affected.add(str(fpath.relative_to(repo_dir)).replace("\\", "/"))
+
+            # Fix A5: emit scanning progress every ~10% of files (or at least every 10 files)
+            notify_every = max(1, total // 10)
+            if progress_cb and (idx + 1) % notify_every == 0:
+                pct = round((idx + 1) / total * 100) if total else 100
+                progress_cb("scanning", {
+                    "progress": pct,
+                    "file": str(fpath.name),
+                    "files_scanned": idx + 1,
+                    "total": total,
+                })
+
+        # Fix A5: emit analyzing milestone before score calculation
+        if progress_cb:
+            progress_cb("analyzing", {"message": "Calculating security score..."})
+
         score = calculate_score(all_vulns)
         summary = ScanSummary(
             CRITICAL=sum(1 for v in all_vulns if v.severity == VulnerabilitySeverity.CRITICAL),
@@ -198,11 +221,16 @@ def scan_repo(repo_url: str) -> ScanResult:
             duration_ms=duration_ms,
             timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
-        return ScanResult(
+        result = ScanResult(
             repo_url=repo_url, repo_name=get_repo_name_from_url(repo_url),
             score=score, summary=summary, vulnerabilities=all_vulns,
             stats=stats, affected_files=sorted(affected),
         )
+        # Fix A5: emit done milestone
+        if progress_cb:
+            progress_cb("done", {})
+        return result
     finally:
         if repo_dir:
             cleanup_temp_dir(repo_dir)
+

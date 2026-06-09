@@ -142,6 +142,34 @@ def get_fix_history(fix_id: str) -> Optional[dict]:
 
 # ─── CRUD Operations ──────────────────────────────────────────────────────────
 
+# Fix A4: redact potential secret values from vulnerability snippets before storage
+import re as _re
+
+_SECRET_PATTERN = _re.compile(
+    r'(api[_-]?key|password|secret|token|private[_-]?key|auth)',
+    _re.IGNORECASE
+)
+
+def redact_sensitive_data(scan_dict: dict) -> dict:
+    """Redact potential secret values from vulnerability snippets before storage."""
+    import copy
+    data = copy.deepcopy(scan_dict)
+    vulns = data.get("vulnerabilities", [])
+    for v in vulns:
+        rule_id = v.get("ruleId", "") or v.get("rule_id", "")
+        if "SEC" in rule_id or "SECRET" in rule_id.upper():
+            loc = v.get("location", {})
+            if loc.get("snippet"):
+                loc["snippet"] = "[REDACTED — potential secret]"
+            if v.get("message"):
+                v["message"] = _re.sub(
+                    r'["\']([A-Za-z0-9+/=!@#$%^&*_\-]{8,})["\']',
+                    '"[REDACTED]"',
+                    v["message"]
+                )
+    return data
+
+
 def save_scan(scan_result: dict) -> int:
     """
     Persist a scan result to history.
@@ -151,6 +179,9 @@ def save_scan(scan_result: dict) -> int:
     import json
     db: Session = SessionLocal()
     try:
+        # Fix A4: redact secrets before serialising to history storage
+        scan_result = redact_sensitive_data(scan_result)
+
         summary = scan_result.get("summary", {})
         score_data = scan_result.get("score", {})
         stats = scan_result.get("stats", {})
@@ -190,6 +221,7 @@ def save_scan(scan_result: dict) -> int:
         return -1
     finally:
         db.close()
+
 
 
 def get_history(limit: int = 20, offset: int = 0) -> List[dict]:

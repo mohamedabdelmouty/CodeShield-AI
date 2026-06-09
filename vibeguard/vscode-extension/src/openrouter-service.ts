@@ -10,6 +10,32 @@ export class OpenRouterService {
         'mistralai/mistral-7b-instruct:free'
     ];
 
+    // Fix B3: in-memory circuit breaker — don't retry models that keep failing
+    private _modelFailures = new Map<string, { count: number; lastFailure: number }>();
+    private readonly CIRCUIT_OPEN_THRESHOLD = 3;
+    private readonly CIRCUIT_RESET_MS = 5 * 60 * 1000; // 5 minutes
+
+    private _isCircuitOpen(model: string): boolean {
+        const rec = this._modelFailures.get(model);
+        if (!rec) return false;
+        if (Date.now() - rec.lastFailure > this.CIRCUIT_RESET_MS) {
+            this._modelFailures.delete(model);
+            return false;
+        }
+        return rec.count >= this.CIRCUIT_OPEN_THRESHOLD;
+    }
+
+    private _recordFailure(model: string): void {
+        const rec = this._modelFailures.get(model) ?? { count: 0, lastFailure: 0 };
+        rec.count++;
+        rec.lastFailure = Date.now();
+        this._modelFailures.set(model, rec);
+    }
+
+    private _recordSuccess(model: string): void {
+        this._modelFailures.delete(model);
+    }
+
     private _initializeClient(): OpenAI {
         const config = vscode.workspace.getConfiguration('vibeguard');
         let apiKey = config.get<string>('openRouterApiKey')?.trim();
@@ -52,6 +78,8 @@ export class OpenRouterService {
         let lastError: Error | null = null;
 
         for (const model of modelsToTry) {
+            // Fix B3: skip models whose circuit is open (too many recent failures)
+            if (this._isCircuitOpen(model)) continue;
             try {
                 const response = await this.client.chat.completions.create({
                     model: model,
@@ -60,9 +88,13 @@ export class OpenRouterService {
                 });
 
                 if (response.choices && response.choices.length > 0) {
+                    // Fix B3: mark model as healthy on success
+                    this._recordSuccess(model);
                     return response.choices[0].message.content || '';
                 }
             } catch (error: any) {
+                // Fix B3: record failure for circuit breaker
+                this._recordFailure(model);
                 lastError = error;
                 console.warn(`[OpenRouter] Model ${model} failed:`, error.message);
                 // Continue to the next fallback model

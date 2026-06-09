@@ -60,6 +60,10 @@ let historyProvider: VulnerabilityHistoryProvider;
 let realtimeScanTimer: NodeJS.Timeout | undefined;
 let realtimeScanEnabled = true;
 
+// Fix B2: dirty-range tracker — skip scan if the document hasn't changed since the last scan
+let _lastScannedVersion = new Map<string, number>(); // uri → document version
+let _lastScanHadVulns   = new Map<string, boolean>(); // uri → had vulns
+
 // ─── Activation ───────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -106,7 +110,8 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(autoFixDisposable);
 
     // ── Register Chat Provider ──────────────────────────────────────
-    const chatProvider = new VibeguardChatProvider(context.extensionUri);
+    // Fix B1: pass context so chat history can be persisted across sidebar reopens
+    const chatProvider = new VibeguardChatProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(VibeguardChatProvider.viewType, chatProvider)
     );
@@ -453,7 +458,8 @@ echo "✅ VibeGuard: Security check passed."
     // ── Event Listeners ───────────────────────────────────────────
 
     const config = vscode.workspace.getConfiguration('vibeguard');
-    const realtimeDelay = config.get<number>('realtimeScanDelay', 1500);
+    // Fix B2: increased default debounce from 1500ms to 2500ms to reduce lag on large files
+    const realtimeDelay = config.get<number>('realtimeScanDelay', 2500);
 
     // Auto-scan on file save
     if (config.get<boolean>('scanOnSave')) {
@@ -487,11 +493,30 @@ echo "✅ VibeGuard: Security check passed."
             if (!SUPPORTED_EXTENSIONS.test(doc.uri.fsPath)) return;
             if (event.contentChanges.length === 0) return;
 
+            // Fix B2: track document key for version-based dedup
+            const docKey = doc.uri.toString();
+
             // Clear existing timer and set a new debounced one
             if (realtimeScanTimer) clearTimeout(realtimeScanTimer);
             realtimeScanTimer = setTimeout(async () => {
+                // Fix B2: skip scan if document version hasn't changed since last scan
+                const currentVersion = doc.version;
+                if (_lastScannedVersion.get(docKey) === currentVersion) return;
+                _lastScannedVersion.set(docKey, currentVersion);
+
                 await scanActiveFile(doc);
             }, realtimeDelay);
+        })
+    );
+
+    // Fix B2: scan-on-save mode — faster feedback on save, complements debounced typing scan
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument(async (doc) => {
+            if (!config.get<boolean>('enabled')) return;
+            if (!SUPPORTED_EXTENSIONS.test(doc.uri.fsPath)) return;
+            // Cancel any pending realtime scan — save scan takes priority
+            if (realtimeScanTimer) { clearTimeout(realtimeScanTimer); realtimeScanTimer = undefined; }
+            await scanActiveFile(doc);
         })
     );
 

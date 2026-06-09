@@ -3,7 +3,13 @@
  * Handles scanning, rendering results, charts, and interactivity.
  */
 
-const API_BASE = 'http://localhost:8000';
+// Fix A1: auto-detect API base so the app works on any deployment, not just localhost
+const API_BASE = (() => {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:8000';
+  }
+  return window.location.origin;
+})();
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentData = null;
@@ -98,6 +104,7 @@ const TRANSLATIONS = {
     pdf_total: "Total Issues:",
     pdf_summary: "Summary",
     pdf_findings: "Detailed Findings",
+    scan_progress: "files scanned",
     generating_pdf: "Generating PDF..."
   },
   ar: {
@@ -185,6 +192,7 @@ const TRANSLATIONS = {
     pdf_total: "إجمالي الثغرات:",
     pdf_summary: "ملخص",
     pdf_findings: "النتائج التفصيلية",
+    scan_progress: "ملف تم فحصه",
     generating_pdf: "جاري إنشاء PDF..."
   }
 };
@@ -273,39 +281,105 @@ async function handleScan() {
 }
 
 async function scanRepo(url) {
-  animateLoadingSteps();
-  const res = await fetch(`${API_BASE}/api/scan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ repo_url: url }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Server error: ${res.status}`);
-  }
-  return res.json();
+  // Fix A5: delegate to SSE-streaming scanner — animateLoadingSteps is now gone
+  return startScanWithProgress(url);
 }
 
 // ─── Loading Steps ────────────────────────────────────────────────────────────
-function animateLoadingSteps() {
-  const steps = ['step-clone', 'step-scan', 'step-analyze'];
-  let i = 0;
-  steps.forEach(id => {
-    const el = $(id);
-    el.classList.remove('active', 'done');
+// Fix A5: SSE-based real progress — replaces fake animateLoadingSteps()
+// Uses fetch + ReadableStream because /api/scan/stream is a POST endpoint.
+// Native EventSource only supports GET, so we decode the stream manually.
+async function startScanWithProgress(repoUrl) {
+  // Reset all step indicators to initial state
+  ['step-clone', 'step-scan', 'step-analyze'].forEach(id => {
+    $(id).classList.remove('active', 'done');
   });
-  $(steps[0]).classList.add('active');
+  $('step-clone').classList.add('active');
 
-  const iv = setInterval(() => {
-    if (i < steps.length - 1) {
-      $(steps[i]).classList.remove('active');
-      $(steps[i]).classList.add('done');
-      i++;
-      $(steps[i]).classList.add('active');
-    } else {
-      clearInterval(iv);
+  // Inject a live file-counter label under the scanning step
+  const scanStep = $('step-scan');
+  let fileCounterEl = document.getElementById('file-counter');
+  if (!fileCounterEl) {
+    fileCounterEl = document.createElement('span');
+    fileCounterEl.id = 'file-counter';
+    fileCounterEl.style.cssText = 'font-size:12px;opacity:0.6;margin-left:8px;';
+    scanStep.appendChild(fileCounterEl);
+  }
+  fileCounterEl.textContent = '';
+
+  // ── Try SSE streaming via POST + ReadableStream ──────────────────────────────
+  let streamRes = null;
+  try {
+    streamRes = await fetch(`${API_BASE}/api/scan/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: repoUrl }),
+    });
+  } catch (_) { streamRes = null; }
+
+  if (streamRes && streamRes.ok && streamRes.body) {
+    return new Promise((resolve, reject) => {
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function processChunk({ done, value }) {
+        if (done) { reject(new Error('Stream ended without a result')); return; }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let msg;
+          try { msg = JSON.parse(line.slice(6)); } catch { continue; }
+          if (msg.type === 'clone_done') {
+            $('step-clone').classList.remove('active'); $('step-clone').classList.add('done');
+            $('step-scan').classList.add('active');
+          } else if (msg.type === 'scanning') {
+            fileCounterEl.textContent = `${msg.files_scanned||0} / ${msg.total||'?'} ${TRANSLATIONS[currentLang].scan_progress}`;
+          } else if (msg.type === 'analyzing') {
+            $('step-scan').classList.remove('active'); $('step-scan').classList.add('done');
+            $('step-analyze').classList.add('active');
+          } else if (msg.type === 'result') {
+            $('step-analyze').classList.remove('active'); $('step-analyze').classList.add('done');
+            resolve(msg.data); return;
+          } else if (msg.type === 'error') {
+            reject(new Error(msg.message || 'Scan failed')); return;
+          }
+        }
+        reader.read().then(processChunk).catch(reject);
+      }
+      reader.read().then(processChunk).catch(reject);
+    });
+  }
+
+  // ── Fallback: stream endpoint not available — use /api/scan with slower steps ─
+  const fakeSteps = ['step-clone', 'step-scan', 'step-analyze'];
+  let stepIdx = 0;
+  const stepInterval = setInterval(() => {
+    if (stepIdx < fakeSteps.length - 1) {
+      $(fakeSteps[stepIdx]).classList.remove('active'); $(fakeSteps[stepIdx]).classList.add('done');
+      stepIdx++;
+      $(fakeSteps[stepIdx]).classList.add('active');
+    } else { clearInterval(stepInterval); }
+  }, 5000); // slower — more honest for a 30–60 s scan
+  try {
+    const fallRes = await fetch(`${API_BASE}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: repoUrl }),
+    });
+    clearInterval(stepInterval);
+    fakeSteps.forEach(id => { $(id).classList.remove('active'); $(id).classList.add('done'); });
+    if (!fallRes.ok) {
+      const errBody = await fallRes.json().catch(() => ({}));
+      throw new Error(errBody.detail || `Server error: ${fallRes.status}`);
     }
-  }, 1800);
+    return fallRes.json();
+  } catch (err) {
+    clearInterval(stepInterval);
+    throw err;
+  }
 }
 
 // ─── Render Results ───────────────────────────────────────────────────────────

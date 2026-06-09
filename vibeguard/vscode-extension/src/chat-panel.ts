@@ -22,7 +22,23 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-    constructor(private readonly _extensionUri: vscode.Uri) {}
+    // Fix B1: accept extensionContext so we can persist chat history across sidebar reopens
+    constructor(
+        private readonly _extensionUri: vscode.Uri,
+        private readonly _context: vscode.ExtensionContext
+    ) {}
+
+    // Fix B1: load persisted history from workspaceState
+    private _loadHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
+        return this._context.workspaceState.get<Array<{ role: 'user' | 'assistant'; content: string }>>(
+            'vibeguard.chatHistory', []
+        );
+    }
+
+    // Fix B1: save history to workspaceState, capped at 50 messages to avoid unbounded growth
+    private _saveHistory(): void {
+        this._context.workspaceState.update('vibeguard.chatHistory', this._chatHistory.slice(-50));
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -33,6 +49,9 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
         webviewView.webview.html = this._getHtmlForWebview();
 
+        // Fix B1: restore persisted history on every webview open
+        this._chatHistory = this._loadHistory();
+
         webviewView.webview.onDidReceiveMessage(async data => {
             switch (data.type) {
                 case 'askAi':
@@ -40,6 +59,8 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'clearChat':
                     this._chatHistory = [];
+                    // Fix B1: also clear from persistent storage
+                    this._context.workspaceState.update('vibeguard.chatHistory', []);
                     this._view?.webview.postMessage({ type: 'clearChat' });
                     break;
             }
@@ -66,6 +87,8 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         if (!userMsg.trim()) return;
 
         this._chatHistory.push({ role: 'user', content: userMsg });
+        // Fix B1: persist after user message push
+        this._saveHistory();
         this._view?.webview.postMessage({ type: 'addMessage', role: 'user', content: userMsg });
         this._view?.webview.postMessage({ type: 'setTyping', value: true });
 
@@ -73,6 +96,8 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         if (!ai.enabled) {
             const reply = '⚠️ AI is disabled in settings. Please enable `vibeguard.enableAi`.';
             this._chatHistory.push({ role: 'assistant', content: reply });
+            // Fix B1: persist after disabled-AI reply push
+            this._saveHistory();
             this._view?.webview.postMessage({ type: 'addMessage', role: 'assistant', content: reply });
             this._view?.webview.postMessage({ type: 'setTyping', value: false });
             return;
@@ -80,7 +105,7 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
 
         try {
             let reply = '';
-            
+
             // Build history context
             const historyContext = this._chatHistory
                 .slice(-10, -1) // get previous context
@@ -119,6 +144,8 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
             }
 
             this._chatHistory.push({ role: 'assistant', content: reply });
+            // Fix B1: persist after AI reply push
+            this._saveHistory();
             this._view?.webview.postMessage({ type: 'addMessage', role: 'assistant', content: reply });
         } catch (err) {
             const errMsg = `❌ AI request failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -273,7 +300,7 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         // Render markdown for assistant
         const rawHtml = marked.parse(content);
         // Add copy buttons to code blocks
-        div.innerHTML = rawHtml.replace(/<pre><code class="(.*?)">([\\s\\S]*?)<\\/code><\\/pre>/g, (match, langClass, code) => {
+        div.innerHTML = rawHtml.replace(/<pre><code class="(.*?)">([\s\S]*?)<\/code><\/pre>/g, (match, langClass, code) => {
           return '<div class="code-container">' +
                    '<div class="code-header">' +
                      '<span>' + langClass.replace('language-', '') + '</span>' +

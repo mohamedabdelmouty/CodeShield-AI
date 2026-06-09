@@ -1,0 +1,6 @@
+# Fix A3: exclude SQLite DB files, Python cache, and secrets from version control
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+.env

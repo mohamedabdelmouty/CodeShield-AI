@@ -69,7 +69,7 @@ app = FastAPI(
 
 # Fix A2: read allowed origins from env var — never open to all in production
 # Set ALLOWED_ORIGINS env var in production (comma-separated list)
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000")
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000,http://127.0.0.1:8000,http://127.0.0.1:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(

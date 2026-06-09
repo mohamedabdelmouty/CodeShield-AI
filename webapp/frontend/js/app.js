@@ -5,7 +5,7 @@
 
 // Fix A1: auto-detect API base so the app works on any deployment, not just localhost
 const API_BASE = (() => {
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  if (window.location.protocol === 'file:') {
     return 'http://localhost:8000';
   }
   return window.location.origin;

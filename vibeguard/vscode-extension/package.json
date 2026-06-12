@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time AI-powered security vulnerability detection — SQL Injection, XSS, Secrets, Auto-Fix, and more. Powered by CodeShield AI.",
-    "version": "3.1.1",
+    "version": "3.1.2",
     "icon": "icon.png",
     "publisher": "vibeguardapp",
     "galleryBanner": {
@@ -226,7 +226,10 @@
                 },
                 "vibeguard.aiProvider": {
                     "type": "string",
-                    "enum": ["Gemini", "OpenRouter"],
+                    "enum": [
+                        "Gemini",
+                        "OpenRouter"
+                    ],
                     "default": "Gemini",
                     "description": "Select the AI provider for Chat, Auto-Fix, and Explain features."
                 },

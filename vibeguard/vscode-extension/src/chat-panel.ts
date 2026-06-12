@@ -6,15 +6,20 @@ const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT ?? 'http
 const BUILT_IN_GEMINI_MODEL = (process.env as any).BUILT_IN_MODEL ?? 'gemini-2.0-flash';
 const BUILT_IN_GEMINI_API_KEY = (process.env as any).BUILT_IN_KEY ?? '';
 
-function getAiConfig() {
+function getAiConfig(): {
+    enabled: boolean;
+    provider: 'Gemini' | 'OpenRouter';
+    endpoint: string;
+    apiKey: string;
+    model: string;
+} {
     const config = vscode.workspace.getConfiguration('vibeguard');
-    return {
-        provider: config.get<string>('aiProvider') || 'Gemini',
-        endpoint: config.get<string>('aiEndpoint')?.trim() || BUILT_IN_GEMINI_ENDPOINT,
-        apiKey: config.get<string>('aiApiKey')?.trim() || BUILT_IN_GEMINI_API_KEY,
-        model: config.get<string>('aiModel')?.trim() || BUILT_IN_GEMINI_MODEL,
-        enabled: config.get<boolean>('enableAi') ?? true,
-    };
+    const enabled = config.get<boolean>('enableAi') ?? true;
+    const provider = config.get<string>('aiProvider') as 'Gemini' | 'OpenRouter' ?? 'Gemini';
+    const endpoint = config.get<string>('aiEndpoint')?.trim() || BUILT_IN_GEMINI_ENDPOINT;
+    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_API_KEY;
+    const model    = config.get<string>('aiModel')?.trim()    || BUILT_IN_GEMINI_MODEL;
+    return { enabled, provider, endpoint, apiKey, model };
 }
 
 export class VibeguardChatProvider implements vscode.WebviewViewProvider {
@@ -115,9 +120,19 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
             if (ai.provider === 'OpenRouter') {
                 reply = await openRouterService.chatWithAI(userMsg, historyContext);
             } else {
-                // GEMINI Logic (Existing)
                 if (!ai.apiKey) {
-                     reply = '⚠️ No Gemini API key configured. Please set `vibeguard.aiApiKey`.';
+                    // Fix 1: Replace the silent/simple error with an actionable message
+                    reply = [
+                        '⚠️ No AI API key configured.',
+                        '',
+                        'To enable the chat, add your key in VS Code settings:',
+                        '• **Gemini (free):** Get a key at https://aistudio.google.com/app/apikey',
+                        '  Then set: `vibeguard.aiApiKey` = your key',
+                        '',
+                        '• **OpenRouter (free models):** Get a key at https://openrouter.ai/keys',
+                        '  Then set: `vibeguard.aiProvider` = OpenRouter',
+                        '  And: `vibeguard.openRouterApiKey` = your key',
+                    ].join('\n');
                 } else {
                     const systemPrompt = `You are VibeGuard AI, an expert security assistant. Help developers understand and fix security vulnerabilities. Be concise, practical, and always provide secure code examples. Format code with markdown code blocks.`;
                     const messages = [

@@ -10,6 +10,7 @@ import * as t from '@babel/types';
 import { Rule, RuleContext } from '../types';
 import { BabelFile, traverse } from '../scanner';
 import { isHighEntropySecret } from '../language-utils';
+import { isTestFile } from './rule-utils';
 
 // Variable/property names that suggest a secret
 const SECRET_KEY_PATTERNS = [
@@ -127,6 +128,8 @@ const hardcodedSecretsRule: Rule = {
     tags: ['secrets', 'credentials', 'configuration', 'owasp-a07'],
     type: 'ast',
     check(context: RuleContext, ast?: BabelFile | null): void {
+        // Fix 3: skip scanning test files
+        if (isTestFile(context.filePath)) return;
         if (!ast) return;
         traverse(ast, {
             // Detect: const apiKey = "sk-abc123..."

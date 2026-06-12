@@ -18,7 +18,7 @@ import { VibeguardDiagnosticsProvider } from './diagnostics';
 import { VibeguardCodeLensProvider } from './codelens';
 import { VibeguardPanel } from './panel';
 import { exportToPdf, exportToPdfToPath } from './pdf-exporter';
-import { scan, scanCode, getAllRules, VIBEGUARD_VERSION } from '@vibeguard/core';
+import { scan, scanCode, getAllRules, VIBEGUARD_VERSION, calculateSecurityScore, Vulnerability, SecurityReport } from '@vibeguard/core';
 import { VibeguardCodeActionProvider } from './code-actions';
 import { VibeguardChatProvider } from './chat-panel';
 import { VulnerabilityHistoryProvider } from './history-provider';
@@ -42,13 +42,21 @@ const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT ?? 'http
 const BUILT_IN_GEMINI_MODEL = (process.env as any).BUILT_IN_MODEL ?? 'gemini-2.0-flash';
 
 /** Returns the effective AI config, preferring user settings over built-in defaults. */
-function getAiConfig(): { enabled: boolean; endpoint: string; apiKey: string; model: string } {
+function getAiConfig(): {
+    enabled: boolean;
+    provider: 'Gemini' | 'OpenRouter';
+    endpoint: string;
+    apiKey: string;
+    model: string;
+} {
     const config = vscode.workspace.getConfiguration('vibeguard');
     const enabled = config.get<boolean>('enableAi') ?? true;
+    const provider = config.get<string>('aiProvider') as 'Gemini' | 'OpenRouter' ?? 'Gemini';
     const endpoint = config.get<string>('aiEndpoint')?.trim() || BUILT_IN_GEMINI_ENDPOINT;
-    const apiKey = config.get<string>('aiApiKey')?.trim() || BUILT_IN_GEMINI_API_KEY;
-    const model = config.get<string>('aiModel')?.trim() || BUILT_IN_GEMINI_MODEL;
-    return { enabled, endpoint, apiKey, model };
+    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_API_KEY;
+    const model    = config.get<string>('aiModel')?.trim()    || BUILT_IN_GEMINI_MODEL;
+    // Fix 1: Chat AI not working: missing provider field
+    return { enabled, provider, endpoint, apiKey, model };
 }
 
 let diagnosticsProvider: VibeguardDiagnosticsProvider;
@@ -184,15 +192,85 @@ export function activate(context: vscode.ExtensionContext): void {
 
                         try {
                             const ai = getAiConfig();
-                            const report = await scan({
+                            const disabledRules = config.get<string[]>('disabledRules') ?? [];
+                            const allRules = getAllRules();
+                            const enabledRuleIds = allRules
+                                .filter((r) => r.enabled && !disabledRules.includes(r.id))
+                                .map((r) => r.id);
+
+                            const ignorePatterns = config.get<string[]>('ignorePatterns') ?? [];
+                            const excludePattern = ignorePatterns.length > 0 ? `{${ignorePatterns.join(',')}}` : '**/node_modules/**';
+
+                            // Fix 4: Find workspace files matching language patterns
+                            const files = await vscode.workspace.findFiles(
+                                new vscode.RelativePattern(folder, '**/*.{js,ts,jsx,tsx,mjs,cjs,py,java,dart}'),
+                                excludePattern,
+                                undefined,
+                                token
+                            );
+
+                            const total = files.length;
+                            let scanned = 0;
+                            let totalLinesScanned = 0;
+                            const allVulnerabilities: Vulnerability[] = [];
+                            const startTime = Date.now();
+
+                            statusBarItem.text = `$(sync~spin) VibeGuard: Scanning 0/${total}...`;
+                            statusBarItem.show();
+
+                            for (const fileUri of files) {
+                                if (token.isCancellationRequested) break;
+
+                                const doc = await vscode.workspace.openTextDocument(fileUri);
+                                const linesCount = doc.getText().split('\n').length;
+                                totalLinesScanned += linesCount;
+
+                                const result = await scanCode(doc.getText(), fileUri.fsPath, {
+                                    target: fileUri.fsPath,
+                                    rules: enabledRuleIds,
+                                    enableAi: ai.enabled,
+                                    aiEndpoint: ai.endpoint,
+                                    aiApiKey: ai.apiKey,
+                                    aiModel: ai.model,
+                                });
+
+                                allVulnerabilities.push(...result);
+                                scanned++;
+                                statusBarItem.text = `$(sync~spin) VibeGuard: Scanning ${scanned}/${total}...`;
+                                // Yield to keep UI responsive
+                                await new Promise(resolve => setTimeout(resolve, 0));
+                            }
+
+                            if (token.isCancellationRequested) {
+                                outputChannel.appendLine(`[VibeGuard] Workspace scan cancelled by user.`);
+                                statusBarItem.text = '$(shield) VibeGuard: Scan Cancelled';
+                                break;
+                            }
+
+                            const scoreThreshold = config.get<number>('threshold') ?? 70;
+                            const score = calculateSecurityScore(allVulnerabilities, scoreThreshold, scanned);
+
+                            const summary = {
+                                CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0,
+                            };
+                            for (const v of allVulnerabilities) {
+                                summary[v.severity]++;
+                            }
+
+                            const report: SecurityReport = {
+                                version: VIBEGUARD_VERSION,
                                 target: folder.uri.fsPath,
-                                ignore: config.get<string[]>('ignorePatterns') ?? [],
-                                includeSnippets: true,
-                                enableAi: ai.enabled,
-                                aiEndpoint: ai.endpoint,
-                                aiApiKey: ai.apiKey,
-                                aiModel: ai.model,
-                            });
+                                score,
+                                vulnerabilities: allVulnerabilities,
+                                summary,
+                                stats: {
+                                    filesScanned: scanned,
+                                    filesSkipped: total - scanned,
+                                    linesScanned: totalLinesScanned,
+                                    durationMs: Date.now() - startTime,
+                                    timestamp: new Date().toISOString(),
+                                }
+                            };
 
                             diagnosticsProvider.setWorkspaceReport(report);
                             updateStatusBar(report.score.score, report.score.grade);
@@ -268,33 +346,52 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand(
             'vibeguard.autoFix',
             async (docUri?: vscode.Uri, diag?: vscode.Diagnostic, vuln?: any) => {
-                // Called from Command Palette — no arguments passed
+                // Fix 2: Support QuickPick fallback when run from Command Palette without arguments
                 if (!vuln) {
                     const editor = vscode.window.activeTextEditor;
-                    if (!editor) {
-                        vscode.window.showWarningMessage('VibeGuard: Place cursor on a flagged line to auto-fix.');
-                        return;
-                    }
-                    const line = editor.selection.active.line + 1;
-                    const uri  = editor.document.uri;
+                    if (editor) {
+                        const line = editor.selection.active.line + 1;
+                        const uri  = editor.document.uri;
 
-                    // Search vulnDataMap for a match on the current cursor line
-                    for (const [key, v] of vulnDataMap.entries()) {
-                        if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
-                            vuln = v;
-                            break;
+                        // Search vulnDataMap for a match on the current cursor line
+                        for (const [key, v] of vulnDataMap.entries()) {
+                            if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
+                                vuln = v;
+                                break;
+                            }
+                        }
+
+                        if (vuln) {
+                            // Build a synthetic diagnostic covering the current line
+                            const lineRange = editor.document.lineAt(editor.selection.active.line).range;
+                            diag = new vscode.Diagnostic(lineRange, vuln.message ?? 'Security vulnerability', vscode.DiagnosticSeverity.Warning);
+                            docUri = uri;
                         }
                     }
 
                     if (!vuln) {
-                        vscode.window.showWarningMessage('VibeGuard: No vulnerability found at cursor. Scan the file first.');
-                        return;
+                        const allVulns = [...vulnDataMap.values()];
+                        if (allVulns.length === 0) {
+                            vscode.window.showInformationMessage('VibeGuard: No vulnerabilities found. Run a scan first.');
+                            return;
+                        }
+                        const items = allVulns.map(v => ({
+                            label: `$(warning) ${v.rule_id || v.id} — ${(v.message || '').slice(0, 60)}`,
+                            description: `${v.location.file}:${v.location.line}`,
+                            vuln: v,
+                        }));
+                        const picked = await vscode.window.showQuickPick(items, {
+                            placeHolder: 'Select a vulnerability to auto-fix',
+                            title: 'VibeGuard: AI Auto-Fix',
+                        });
+                        if (!picked) return;
+                        vuln = picked.vuln;
+                        docUri = vscode.Uri.file(vuln.location.file);
+                        const doc = await vscode.workspace.openTextDocument(docUri);
+                        const lineIndex = Math.max(0, vuln.location.line - 1);
+                        const lineRange = doc.lineAt(lineIndex).range;
+                        diag = new vscode.Diagnostic(lineRange, vuln.message ?? 'Security vulnerability', vscode.DiagnosticSeverity.Warning);
                     }
-
-                    // Build a synthetic diagnostic covering the current line
-                    const lineRange = editor.document.lineAt(editor.selection.active.line).range;
-                    diag = new vscode.Diagnostic(lineRange, vuln.message ?? 'Security vulnerability', vscode.DiagnosticSeverity.Warning);
-                    docUri = uri;
                 }
 
                 if (!docUri || !diag || !vuln) {
@@ -313,24 +410,41 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand(
             'vibeguard.explainVuln',
             async (vuln?: any) => {
-                // If no vuln passed, try to get from cursor position
+                // Fix 2: Support QuickPick fallback when run from Command Palette without arguments
                 if (!vuln) {
                     const editor = vscode.window.activeTextEditor;
-                    if (!editor) {
-                        vscode.window.showWarningMessage('VibeGuard: Place cursor on a flagged line to explain.');
-                        return;
-                    }
-                    const line = editor.selection.active.line + 1;
-                    const uri  = editor.document.uri;
-                    for (const [key, v] of vulnDataMap.entries()) {
-                        if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
-                            vuln = v;
-                            break;
+                    if (editor) {
+                        const line = editor.selection.active.line + 1;
+                        const uri  = editor.document.uri;
+                        for (const [key, v] of vulnDataMap.entries()) {
+                            if (key.startsWith(uri.fsPath) && key.includes(`:${line}:`)) {
+                                vuln = v;
+                                break;
+                            }
                         }
+                    }
+
+                    if (!vuln) {
+                        const allVulns = [...vulnDataMap.values()];
+                        if (allVulns.length === 0) {
+                            vscode.window.showInformationMessage('VibeGuard: No vulnerabilities found. Run a scan first.');
+                            return;
+                        }
+                        const items = allVulns.map(v => ({
+                            label: `$(warning) ${v.rule_id || v.id} — ${(v.message || '').slice(0, 60)}`,
+                            description: `${v.location.file}:${v.location.line}`,
+                            vuln: v,
+                        }));
+                        const picked = await vscode.window.showQuickPick(items, {
+                            placeHolder: 'Select a vulnerability to explain',
+                            title: 'VibeGuard: Explain Vulnerability',
+                        });
+                        if (!picked) return;
+                        vuln = picked.vuln;
                     }
                 }
                 if (!vuln) {
-                    vscode.window.showWarningMessage('VibeGuard: No vulnerability found at cursor. Scan the file first.');
+                    vscode.window.showWarningMessage('VibeGuard: No vulnerability selected.');
                     return;
                 }
                 // Normalize: @vibeguard/core uses camelCase, explain-panel expects snake_case

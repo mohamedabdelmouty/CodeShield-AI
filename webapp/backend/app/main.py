@@ -20,6 +20,9 @@ import json
 import asyncio
 from contextlib import asynccontextmanager
 
+SCAN_TIMEOUT_SECONDS = int(os.environ.get("SCAN_TIMEOUT", "55"))
+# 55s gives 5s buffer before Vercel's 60s hard limit
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -103,7 +106,16 @@ async def scan_repository(request: Request, body: ScanRequest):
 
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(executor, scan_repo, body.repo_url)
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(executor, scan_repo, body.repo_url),
+                timeout=SCAN_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Scan timed out after {SCAN_TIMEOUT_SECONDS}s. Try a smaller repository."
+            )
         result_dict = result.model_dump()
 
         # Persist to history
@@ -111,6 +123,8 @@ async def scan_repository(request: Request, body: ScanRequest):
         result.history_id = history_id
 
         return result
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -153,7 +167,13 @@ async def scan_repository_stream(request: Request, body: ScanRequest):
                 logger.error("SSE scan failed: %s", exc, exc_info=True)
                 await queue.put({"type": "error", "message": str(exc)})
 
-        asyncio.create_task(run_scan())
+        async def run_scan_with_timeout():
+            try:
+                await asyncio.wait_for(run_scan(), timeout=SCAN_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                await queue.put({"type": "error", "message": f"Scan timed out after {SCAN_TIMEOUT_SECONDS}s."})
+
+        asyncio.create_task(run_scan_with_timeout())
 
         while True:
             msg = await queue.get()

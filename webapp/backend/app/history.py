@@ -20,9 +20,16 @@ logger = logging.getLogger("codeshield.history")
 
 # ─── DB Setup ─────────────────────────────────────────────────────────────────
 
+# NOTE: On Vercel serverless, /tmp is ephemeral — history clears between cold starts.
+# For persistent history, set CODESHIELD_DB_PATH to a mounted volume or use a hosted DB.
+_DB_PATH = os.environ.get(
+    "CODESHIELD_DB_PATH",
+    "/tmp/codeshield_history.db"   # writable on Vercel; use env var to override locally
+)
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./codeshield_history.db"
+    f"sqlite:///{_DB_PATH}"
 )
 
 # SQLite-specific: enable WAL mode for concurrent reads

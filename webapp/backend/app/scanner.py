@@ -40,7 +40,9 @@ SEVERITY_WEIGHTS = {
 
 
 def clone_repo(repo_url: str) -> str:
-    temp_dir = tempfile.mkdtemp(prefix="codeshield_")
+    # Vercel only allows writes to /tmp; fall back to default tempdir elsewhere
+    tmp_base = "/tmp" if os.path.isdir("/tmp") and os.access("/tmp", os.W_OK) else None
+    temp_dir = tempfile.mkdtemp(prefix="codeshield_", dir=tmp_base)
     try:
         git.Repo.clone_from(repo_url, temp_dir, depth=1, multi_options=["--quiet"])
         return temp_dir

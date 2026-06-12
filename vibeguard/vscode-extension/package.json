@@ -16,12 +16,6 @@
         "Linters",
         "Other"
     ],
-    "files": [
-        "dist",
-        "icon.png",
-        "README.md",
-        "package.json"
-    ],
     "keywords": [
         "security",
         "vulnerability",

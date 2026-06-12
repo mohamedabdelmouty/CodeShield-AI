@@ -4,6 +4,7 @@ Handles GitHub repo cloning, file walking, rule application (regex + AST), and s
 """
 
 import os
+import re as _re
 import tempfile
 import zipfile
 import urllib.request
@@ -38,6 +39,14 @@ SCANNABLE_EXTENSIONS = {
     ".java", ".php", ".rb", ".go", ".cs", ".cpp", ".c", ".html",
     ".dart", ".yaml", ".yml", ".json", ".sh"
 }
+SKIP_FILE_PATTERNS = [
+    r'rules\.py$',           # rule definition files
+    r'rules\.ts$',           # TS rule definition files
+    r'\.test\.[jt]sx?$',     # test files
+    r'\.spec\.[jt]sx?$',     # spec files
+    r'__tests__',            # test directories
+    r'node_modules',         # already skipped but be explicit
+]
 SEVERITY_WEIGHTS = {
     "CRITICAL": 25, "HIGH": 15, "MEDIUM": 7, "LOW": 3, "INFO": 1,
 }
@@ -144,6 +153,10 @@ def _get_snippet(lines: List[str], line_idx: int, context: int = 3) -> str:
 
 
 def scan_file(fpath: Path, repo_dir: str) -> Tuple[List[Vulnerability], int]:
+    rel_path_check = str(fpath).replace("\\", "/")
+    if any(_re.search(pat, rel_path_check) for pat in SKIP_FILE_PATTERNS):
+        return [], 0
+
     vulns: List[Vulnerability] = []
     ext = fpath.suffix.lower().lstrip(".")
     rules = get_rules_for_extension(ext)

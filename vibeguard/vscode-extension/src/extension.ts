@@ -199,7 +199,19 @@ export function activate(context: vscode.ExtensionContext): void {
                                 .map((r) => r.id);
 
                             const ignorePatterns = config.get<string[]>('ignorePatterns') ?? [];
-                            const excludePattern = ignorePatterns.length > 0 ? `{${ignorePatterns.join(',')}}` : '**/node_modules/**';
+                            const defaultExcludes = [
+                                '**/node_modules/**',
+                                '**/dist/**',
+                                '**/build/**',
+                                '**/.git/**',
+                                '**/rules/*.ts',       // skip rule definition files
+                                '**/*.test.ts',        // skip test files
+                                '**/*.spec.ts',
+                                '**/__tests__/**',
+                            ];
+                            const extraExcludes = ignorePatterns.length > 0 ? ignorePatterns : [];
+                            const allExcludes = [...defaultExcludes, ...extraExcludes];
+                            const excludePattern = `{${allExcludes.join(',')}}`;
 
                             // Fix 4: Find workspace files matching language patterns
                             const files = await vscode.workspace.findFiles(
@@ -297,12 +309,21 @@ export function activate(context: vscode.ExtensionContext): void {
                                 outputChannel.appendLine(`[VibeGuard] Failed to write PDF: ${err}`);
                             }
 
+                            // Show the report panel automatically after workspace scan
+                            VibeguardPanel.createOrShow(context.extensionUri, report);
+
+                            // Also show a notification with quick actions
+                            const msg = `VibeGuard: Scan complete — Score ${report.score.score}/100 (${report.score.grade}). ${report.vulnerabilities.length} issue${report.vulnerabilities.length !== 1 ? 's' : ''} found.`;
                             vscode.window.showInformationMessage(
-                                `🛡️ VibeGuard: Score ${report.score.score}/100 (Grade ${report.score.grade}). Found ${report.vulnerabilities.length} issue${report.vulnerabilities.length !== 1 ? 's' : ''}. PDF saved.`,
-                                'Show Report'
-                            ).then((action) => {
-                                if (action === 'Show Report') {
+                                msg,
+                                'View Report',
+                                'Export PDF',
+                                'Dismiss'
+                            ).then(async (action) => {
+                                if (action === 'View Report') {
                                     VibeguardPanel.createOrShow(context.extensionUri, report);
+                                } else if (action === 'Export PDF') {
+                                    await exportToPdf(report);
                                 }
                             });
                         } catch (err) {

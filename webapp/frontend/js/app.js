@@ -723,25 +723,37 @@ function generatePdf(lang) {
     });
   }
 
-  // Generate with html2pdf
+  // Move template off-screen instead of display:none — html2canvas needs it rendered
+  const wrapper = $('pdf-template-wrapper');
+  wrapper.style.cssText = 'position:fixed;top:-9999px;left:-9999px;display:block;z-index:-1;';
+
   const opt = {
-    margin:       10,
-    filename:     `CodeShield_Report_${d.repo_url.split('/').pop()}.pdf`,
-    image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true },
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    margin: [10, 10, 10, 10],
+    filename: `CodeShield_Report_${(d.repo_url || 'report').split('/').pop()}.pdf`,
+    image: { type: 'jpeg', quality: 0.97 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      windowWidth: 900,       // force consistent render width
+      scrollX: 0,
+      scrollY: 0,
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
   };
-  
-  // Show temporary feedback on button
+
   const btnText = $('download-pdf-btn').querySelector('span');
   const origText = btnText.textContent;
   btnText.textContent = t.generating_pdf;
-  
-  $('pdf-template-wrapper').style.display = 'block';
-  
-  html2pdf().set(opt).from(tpl).save().then(() => {
-    $('pdf-template-wrapper').style.display = 'none';
+
+  html2pdf().set(opt).from($('pdf-template')).save().then(() => {
+    wrapper.style.cssText = 'display:none;';
     btnText.textContent = origText;
+  }).catch(err => {
+    wrapper.style.cssText = 'display:none;';
+    btnText.textContent = origText;
+    console.error('PDF generation failed:', err);
   });
 }
 

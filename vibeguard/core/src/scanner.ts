@@ -45,6 +45,15 @@ const DEFAULT_IGNORE_PATTERNS = [
     '**/*.bundle.js',
 ];
 
+// Files that must never be scanned — they contain pattern strings that look like
+// vulnerabilities but are not executable code (rule definitions, test files, etc.)
+const SKIP_FILE_PATTERNS = [
+    /\/rules\/[^/]+\.[jt]sx?$/,    // rule definition files
+    /\.test\.[jt]sx?$/,             // test files
+    /\.spec\.[jt]sx?$/,             // spec files
+    /__tests__\//,                  // test directories
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
@@ -121,6 +130,13 @@ async function scanFile(
     options: ScanOptions,
     makeVulnId: () => string   // Fix: race condition — generator is passed in, not shared globally
 ): Promise<{ vulnerabilities: Vulnerability[]; linesScanned: number }> {
+    // Skip rule definition files and test files — they contain pattern
+    // strings that look like vulnerabilities but are not executable code
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    if (SKIP_FILE_PATTERNS.some(p => p.test(normalizedPath))) {
+        return { vulnerabilities: [], linesScanned: 0 };
+    }
+
     const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
     const absolutePath = path.resolve(filePath);
     const stat = fs.statSync(absolutePath);

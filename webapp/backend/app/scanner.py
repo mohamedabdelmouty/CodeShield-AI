@@ -31,6 +31,7 @@ IGNORE_DIRS = {
     ".git", "node_modules", "dist", "build", "__pycache__",
     ".venv", "venv", "env", "vendor", ".next", ".nuxt",
     "coverage", ".pytest_cache", "target", "out",
+    "examples", "tests", "test", "docs", "fixtures", ".github"
 }
 SCANNABLE_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",

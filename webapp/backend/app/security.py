@@ -90,10 +90,11 @@ def get_repo_name_from_url(url: str) -> str:
     return parsed.path.strip("/")
 
 
-def cleanup_temp_dir(temp_dir: str) -> None:
-    """Safely remove a temporary directory."""
+def cleanup_temp_dir(path: str) -> None:
+    """Remove a temporary directory safely."""
     try:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        if path and os.path.exists(path):
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
     except Exception:
         pass

@@ -5,6 +5,8 @@ Handles GitHub repo cloning, file walking, rule application (regex + AST), and s
 
 import os
 import tempfile
+import zipfile
+import urllib.request
 import subprocess
 # Silence gitpython startup error — git may not be in PATH on serverless
 os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")
@@ -41,72 +43,74 @@ SEVERITY_WEIGHTS = {
 
 
 def clone_repo(repo_url: str) -> str:
-    """Clone a GitHub repo to a temp directory using subprocess git with ZIP download fallback."""
+    """
+    Download a GitHub repo as a ZIP using the GitHub API and extract to /tmp.
+    Works on Vercel serverless where git binary is not available.
+    """
+    # Normalize URL — strip trailing slash and .git
+    url = repo_url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    # Extract owner/repo from URL
+    # Supports: https://github.com/owner/repo
+    parts = url.rstrip("/").split("/")
+    if len(parts) < 2:
+        raise ValueError(f"Cannot parse GitHub URL: {repo_url}")
+    owner, repo = parts[-2], parts[-1]
+
+    # Try main then master branch
     tmp_base = "/tmp" if os.path.isdir("/tmp") and os.access("/tmp", os.W_OK) else None
-    temp_dir = tempfile.mkdtemp(prefix="codeshield_", dir=tmp_base)
-    
-    # Try subprocess git first
-    git_cloned = False
-    git_error = None
-    try:
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--quiet", repo_url, temp_dir],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode == 0:
-            git_cloned = True
-        else:
-            git_error = f"git clone failed: {result.stderr.strip()}"
-    except FileNotFoundError:
-        git_error = "git is not installed or not in PATH."
-    except subprocess.TimeoutExpired:
-        git_error = "git clone timed out after 60 seconds."
-    except Exception as e:
-        git_error = str(e)
+    zip_path = tempfile.mktemp(suffix=".zip", dir=tmp_base)
+    extract_dir = tempfile.mkdtemp(prefix="codeshield_", dir=tmp_base)
 
-    if not git_cloned:
-        # Fall back to downloading the zipball from GitHub (great for serverless/Vercel)
+    downloaded = False
+    last_error = None
+
+    for branch in ("main", "master"):
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
         try:
-            import zipfile
-            import urllib.request
-            import io
-            import shutil
-
-            repo_name = get_repo_name_from_url(repo_url)
-            if "/" not in repo_name:
-                raise ValueError(f"Could not parse repository name from URL: {repo_url}")
-            owner, repo = repo_name.split("/", 1)
-            
-            zip_url = f"https://api.github.com/repos/{owner}/{repo}/zipball/"
             req = urllib.request.Request(
                 zip_url,
-                headers={"User-Agent": "CodeShield-AI-Webapp"}
+                headers={"User-Agent": "CodeShield-AI/1.0"}
             )
-            
             with urllib.request.urlopen(req, timeout=30) as response:
-                zip_data = response.read()
-                
-            with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_ref:
-                zip_ref.extractall(temp_dir)
-                
-            # Move files from the nested directory up to temp_dir
-            extracted_dirs = [d for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d))]
-            if len(extracted_dirs) == 1:
-                nested_dir = os.path.join(temp_dir, extracted_dirs[0])
-                for item in os.listdir(nested_dir):
-                    shutil.move(os.path.join(nested_dir, item), temp_dir)
-                os.rmdir(nested_dir)
-        except Exception as zip_e:
-            cleanup_temp_dir(temp_dir)
-            raise ValueError(
-                f"Failed to retrieve repository. "
-                f"Git clone error: {git_error}. "
-                f"Zip download error: {zip_e}"
-            ) from zip_e
+                with open(zip_path, "wb") as f:
+                    f.write(response.read())
+            downloaded = True
+            break
+        except Exception as e:
+            last_error = e
+            continue
 
-    return temp_dir
+    if not downloaded:
+        cleanup_temp_dir(extract_dir)
+        raise ValueError(
+            f"Failed to download repository '{owner}/{repo}'. "
+            f"Make sure the repo is public. Last error: {last_error}"
+        )
+
+    # Extract ZIP
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(extract_dir)
+    except zipfile.BadZipFile as e:
+        cleanup_temp_dir(extract_dir)
+        raise ValueError(f"Downloaded file is not a valid ZIP: {e}")
+    finally:
+        # Clean up zip file
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+    # GitHub ZIP contains a single top-level folder: repo-branch/
+    # Return the inner folder so scanner sees the actual repo files
+    inner_dirs = [
+        d for d in os.listdir(extract_dir)
+        if os.path.isdir(os.path.join(extract_dir, d))
+    ]
+    if inner_dirs:
+        return os.path.join(extract_dir, inner_dirs[0])
+    return extract_dir
 
 
 def collect_files(repo_dir: str) -> List[Path]:

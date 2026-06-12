@@ -4,7 +4,10 @@
     {
       "src": "backend/app/main.py",
       "use": "@vercel/python",
-      "config": { "maxLambdaSize": "50mb" }
+      "config": { 
+        "maxLambdaSize": "50mb",
+        "maxDuration": 60
+      }
     },
     {
       "src": "frontend/**",
@@ -18,10 +21,5 @@
   "env": {
     "SCAN_TIMEOUT": "55",
     "ALLOWED_ORIGINS": "https://your-app.vercel.app"
-  },
-  "functions": {
-    "backend/app/main.py": {
-      "maxDuration": 60
-    }
   }
 }

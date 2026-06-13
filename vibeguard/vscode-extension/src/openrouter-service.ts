@@ -200,14 +200,6 @@ Return ONLY the complete fixed code block without any explanation. Ensure you pr
         };
     }
 
-    /**
-     * Inline Suggestions
-     */
-    public async generateSuggestions(vuln: any): Promise<string> {
-        const prompt = `Provide a very brief 1-2 sentence suggestion to fix this security issue: ${vuln.message}`;
-        const messages = [{ role: 'user', content: prompt }];
-        return this.executeWithFallback(messages, 0.3);
-    }
 }
 
 export const openRouterService = new OpenRouterService();

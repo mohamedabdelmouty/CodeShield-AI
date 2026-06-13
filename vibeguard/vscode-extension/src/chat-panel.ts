@@ -2,25 +2,77 @@ import * as vscode from 'vscode';
 import { Vulnerability } from '@vibeguard/core';
 import { openRouterService } from './openrouter-service';
 
-const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT ?? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const BUILT_IN_GEMINI_MODEL = (process.env as any).BUILT_IN_MODEL ?? 'gemini-2.0-flash';
-const BUILT_IN_GEMINI_API_KEY = (process.env as any).BUILT_IN_KEY ?? '';
+const BUILT_IN_GEMINI_KEY      = (process.env as any).BUILT_IN_KEY          ?? '';
+const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT     ?? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const BUILT_IN_GEMINI_MODEL    = (process.env as any).BUILT_IN_MODEL        ?? 'gemini-2.0-flash';
+const BUILT_IN_GROQ_KEY        = (process.env as any).BUILT_IN_GROQ_KEY     ?? '';
+const BUILT_IN_GROQ_MODEL      = (process.env as any).BUILT_IN_GROQ_MODEL   ?? 'llama-3.3-70b-versatile';
+const GROQ_ENDPOINT            = 'https://api.groq.com/openai/v1/chat/completions';
 
 function getAiConfig(): {
     enabled: boolean;
-    provider: 'Gemini' | 'OpenRouter';
+    provider: 'Gemini' | 'Groq' | 'OpenRouter';
     endpoint: string;
     apiKey: string;
     model: string;
 } {
     const config = vscode.workspace.getConfiguration('vibeguard');
-    const enabled = config.get<boolean>('enableAi') ?? true;
-    const provider = config.get<string>('aiProvider') as 'Gemini' | 'OpenRouter' ?? 'Gemini';
+    const enabled  = config.get<boolean>('enableAi') ?? true;
+    const provider = (config.get<string>('aiProvider') ?? 'Groq') as 'Gemini' | 'Groq' | 'OpenRouter';
+
+    if (provider === 'Groq') {
+        const apiKey = config.get<string>('groqApiKey')?.trim() || BUILT_IN_GROQ_KEY;
+        const model  = config.get<string>('groqModel')?.trim()  || BUILT_IN_GROQ_MODEL;
+        return { enabled, provider, endpoint: GROQ_ENDPOINT, apiKey, model };
+    }
+
+    if (provider === 'OpenRouter') {
+        return { enabled, provider, endpoint: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '', model: '' };
+    }
+
     const endpoint = config.get<string>('aiEndpoint')?.trim() || BUILT_IN_GEMINI_ENDPOINT;
-    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_API_KEY;
+    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_KEY;
     const model    = config.get<string>('aiModel')?.trim()    || BUILT_IN_GEMINI_MODEL;
     return { enabled, provider, endpoint, apiKey, model };
 }
+
+// ─── Direct AI call helper (outside class so it's accessible from fallback logic) ─
+
+/** Throws an Error (with `.status` attached) on non-OK HTTP; throws on network/timeout. */
+async function _callAiDirect(
+    endpoint: string,
+    apiKey: string,
+    model: string,
+    messages: Array<{ role: string; content: string }>
+): Promise<string> {
+    if (!apiKey) {
+        const e = new Error('No API key provided') as any;
+        e.status = 401;
+        throw e;
+    }
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model, messages, max_tokens: 1024 }),
+        signal: AbortSignal.timeout(30_000),   // 30-second hard timeout
+    });
+
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        const e = new Error(`HTTP ${response.status}: ${body.slice(0, 200)}`) as any;
+        e.status = response.status;
+        throw e;
+    }
+
+    const json = await response.json() as any;
+    return json.choices?.[0]?.message?.content ?? 'No response from AI.';
+}
+
+// ─── Chat Provider ────────────────────────────────────────────────────────────
 
 export class VibeguardChatProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'vibeguard.chatView';
@@ -92,7 +144,6 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         if (!userMsg.trim()) return;
 
         this._chatHistory.push({ role: 'user', content: userMsg });
-        // Fix B1: persist after user message push
         this._saveHistory();
         this._view?.webview.postMessage({ type: 'addMessage', role: 'user', content: userMsg });
         this._view?.webview.postMessage({ type: 'setTyping', value: true });
@@ -101,7 +152,6 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
         if (!ai.enabled) {
             const reply = '⚠️ AI is disabled in settings. Please enable `vibeguard.enableAi`.';
             this._chatHistory.push({ role: 'assistant', content: reply });
-            // Fix B1: persist after disabled-AI reply push
             this._saveHistory();
             this._view?.webview.postMessage({ type: 'addMessage', role: 'assistant', content: reply });
             this._view?.webview.postMessage({ type: 'setTyping', value: false });
@@ -113,60 +163,86 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
 
             // Build history context
             const historyContext = this._chatHistory
-                .slice(-10, -1) // get previous context
+                .slice(-10, -1)
                 .map(m => `${m.role.toUpperCase()}: ${m.content}`)
                 .join('\\n');
 
             if (ai.provider === 'OpenRouter') {
                 reply = await openRouterService.chatWithAI(userMsg, historyContext);
             } else {
-                if (!ai.apiKey) {
-                    // Fix 1: Replace the silent/simple error with an actionable message
+                const systemPrompt = `You are VibeGuard AI, an expert security assistant. Help developers understand and fix security vulnerabilities. Be concise, practical, and always provide secure code examples. Format code with markdown code blocks.`;
+                const messages = [
+                    { role: 'system', content: systemPrompt },
+                    ...this._chatHistory.slice(-10)
+                ];
+
+                if (!ai.apiKey && !BUILT_IN_GROQ_KEY && !BUILT_IN_GEMINI_KEY) {
                     reply = [
                         '⚠️ No AI API key configured.',
                         '',
                         'To enable the chat, add your key in VS Code settings:',
-                        '• **Gemini (free):** Get a key at https://aistudio.google.com/app/apikey',
-                        '  Then set: `vibeguard.aiApiKey` = your key',
+                        '• **Groq (free, fast):** Get a key at https://console.groq.com',
+                        '  Then set: `vibeguard.aiProvider` = Groq and `vibeguard.groqApiKey` = your key',
                         '',
-                        '• **OpenRouter (free models):** Get a key at https://openrouter.ai/keys',
-                        '  Then set: `vibeguard.aiProvider` = OpenRouter',
-                        '  And: `vibeguard.openRouterApiKey` = your key',
+                        '• **Gemini (free):** Get a key at https://aistudio.google.com/app/apikey',
+                        '  Then set: `vibeguard.aiProvider` = Gemini and `vibeguard.aiApiKey` = your key',
                     ].join('\n');
                 } else {
-                    const systemPrompt = `You are VibeGuard AI, an expert security assistant. Help developers understand and fix security vulnerabilities. Be concise, practical, and always provide secure code examples. Format code with markdown code blocks.`;
-                    const messages = [
-                        { role: 'system', content: systemPrompt },
-                        ...this._chatHistory.slice(-10)
-                    ];
-
-                    const response = await fetch(ai.endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${ai.apiKey}`,
-                        },
-                        body: JSON.stringify({ model: ai.model, messages, max_tokens: 1024 }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`API error ${response.status}`);
-                    }
-
-                    const json = await response.json();
-                    reply = json.choices?.[0]?.message?.content ?? 'No response from AI.';
+                    reply = await this._callAiWithFallback(messages, ai);
                 }
             }
 
             this._chatHistory.push({ role: 'assistant', content: reply });
-            // Fix B1: persist after AI reply push
             this._saveHistory();
             this._view?.webview.postMessage({ type: 'addMessage', role: 'assistant', content: reply });
         } catch (err) {
             const errMsg = `❌ AI request failed: ${err instanceof Error ? err.message : String(err)}`;
             this._view?.webview.postMessage({ type: 'addMessage', role: 'assistant', content: errMsg });
+            vscode.window.showErrorMessage(`VibeGuard AI: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
         } finally {
             this._view?.webview.postMessage({ type: 'setTyping', value: false });
+        }
+    }
+
+    /**
+     * Call the primary AI provider; if it fails with 429 or auth error,
+     * automatically fall back to the other built-in provider before giving up.
+     */
+    private async _callAiWithFallback(
+        messages: Array<{ role: string; content: string }>,
+        ai: ReturnType<typeof getAiConfig>
+    ): Promise<string> {
+        // Try primary provider first
+        try {
+            return await _callAiDirect(ai.endpoint, ai.apiKey, ai.model, messages);
+        } catch (primaryErr: any) {
+            const status: number = (primaryErr as any)?.status ?? 0;
+            // Only fall back on rate-limit (429) or auth errors (401/403) — not on other errors
+            if (status !== 429 && status !== 401 && status !== 403) throw primaryErr;
+
+            // Determine which built-in provider to fall back to
+            const useFallbackGroq = ai.provider !== 'Groq' && !!BUILT_IN_GROQ_KEY;
+            const useFallbackGemini = ai.provider !== 'Gemini' && !!BUILT_IN_GEMINI_KEY;
+
+            if (useFallbackGroq) {
+                try {
+                    return await _callAiDirect(GROQ_ENDPOINT, BUILT_IN_GROQ_KEY, BUILT_IN_GROQ_MODEL, messages);
+                } catch { /* fall through to Gemini or final error */ }
+            }
+
+            if (useFallbackGemini) {
+                try {
+                    return await _callAiDirect(BUILT_IN_GEMINI_ENDPOINT, BUILT_IN_GEMINI_KEY, BUILT_IN_GEMINI_MODEL, messages);
+                } catch { /* fall through to final error */ }
+            }
+
+            // All providers exhausted — give a helpful, actionable message
+            const providerLabel = ai.provider === 'Groq' ? 'Groq' : 'Gemini';
+            throw new Error(
+                status === 429
+                    ? `The ${providerLabel} API rate limit was reached (all built-in keys tried).\n\nGet your own free key:\n• Groq: https://console.groq.com → set vibeguard.groqApiKey in VS Code Settings\n• Gemini: https://aistudio.google.com/app/apikey → set vibeguard.aiApiKey`
+                    : `The ${providerLabel} API key is invalid or revoked.\n\nSet your own key in VS Code Settings:\n• vibeguard.groqApiKey (for Groq)\n• vibeguard.aiApiKey (for Gemini)`
+            );
         }
     }
 
@@ -177,9 +253,6 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>VibeGuard AI Chat</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     :root {
       --bg: var(--vscode-editor-background);
@@ -267,11 +340,11 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
       <h3 style="color:var(--text);font-weight:600;">How can I help?</h3>
       <p>Click <strong>Ask AI</strong> on any vulnerability, or type a security question below to get started.</p>
     </div>
-  </div>
-  <div id="typing-indicator" style="display:none" class="msg-wrapper assistant">
-    <div class="msg-label">VibeGuard AI</div>
-    <div class="typing">
-      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    <div id="typing-indicator" style="display:none" class="msg-wrapper assistant">
+      <div class="msg-label">VibeGuard AI</div>
+      <div class="typing">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
     </div>
   </div>
   <div class="input-area">
@@ -284,15 +357,65 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
     const prompt = document.getElementById('prompt');
     const typing = document.getElementById('typing-indicator');
 
-    // Configure Marked to use highlight.js
-    marked.setOptions({
-      highlight: function(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-          return hljs.highlight(code, { language: lang }).value;
+    // ── Inline markdown renderer — no CDN needed ─────────────────────────────
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function renderMarkdown(text) {
+      // 1. Extract code blocks first to protect them from inline rules
+      const blocks = [];
+      text = text.replace(/\`\`\`([\\w.-]*)?\\n?([\\s\\S]*?)\`\`\`/g, (_, lang, code) => {
+        const l = (lang || 'code').trim();
+        const id = blocks.length;
+        blocks.push(
+          '<div class="code-container">' +
+          '<div class="code-header"><span>' + esc(l) + '</span>' +
+          '<button class="copy-btn" onclick="copyCode(this)">Copy</button></div>' +
+          '<pre><code>' + esc(code.replace(/^\\n|\\n$/g,'')) + '</code></pre>' +
+          '</div>'
+        );
+        return '\\x00BLOCK' + id + '\\x00';
+      });
+
+      // 2. Inline rules
+      text = text
+        .replace(/\`([^\`\\n]+)\`/g, '<code class="inline-code">$1</code>')
+        .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+        .replace(/\\*([^*\\n]+)\\*/g, '<em>$1</em>');
+
+      // 3. Line-by-line: lists and paragraphs
+      const lines = text.split('\\n');
+      let html = '';
+      let inList = false;
+      for (const raw of lines) {
+        const line = raw.trimEnd();
+        const listMatch = line.match(/^\\s*[-*•]\\s+(.+)/);
+        const numMatch = line.match(/^\\s*\\d+\\.\\s+(.+)/);
+        if (listMatch || numMatch) {
+          if (!inList) { html += '<ul>'; inList = true; }
+          html += '<li>' + (listMatch ? listMatch[1] : numMatch[1]) + '</li>';
+        } else {
+          if (inList) { html += '</ul>'; inList = false; }
+          if (line === '') { html += '<br/>'; }
+          else if (line.startsWith('\\x00BLOCK')) { html += line; }
+          else { html += '<p>' + line + '</p>'; }
         }
-        return hljs.highlightAuto(code).value;
       }
-    });
+      if (inList) html += '</ul>';
+
+      // 4. Restore code blocks
+      blocks.forEach((b, i) => { html = html.replace('\\x00BLOCK' + i + '\\x00', b); });
+      return html;
+    }
+
+    window.copyCode = function(btn) {
+      const code = btn.closest('.code-container').querySelector('code');
+      navigator.clipboard.writeText(code.innerText || code.textContent || '').then(() => {
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = 'Copy', 2000);
+      });
+    };
 
     function scrollToBottom() {
       history.scrollTop = history.scrollHeight;
@@ -301,29 +424,18 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
     function addMessage(role, content) {
       const wrapper = document.createElement('div');
       wrapper.className = 'msg-wrapper ' + role;
-      
+
       const label = document.createElement('div');
       label.className = 'msg-label';
       label.innerText = role === 'user' ? 'You' : 'VibeGuard AI';
-      
+
       const div = document.createElement('div');
       div.className = 'msg msg-' + role;
-      
+
       if (role === 'user') {
-        div.innerText = content; // raw text for user
+        div.innerText = content;
       } else {
-        // Render markdown for assistant
-        const rawHtml = marked.parse(content);
-        // Add copy buttons to code blocks
-        div.innerHTML = rawHtml.replace(/<pre><code class="(.*?)">([\s\S]*?)<\/code><\/pre>/g, (match, langClass, code) => {
-          return '<div class="code-container">' +
-                   '<div class="code-header">' +
-                     '<span>' + langClass.replace('language-', '') + '</span>' +
-                     '<button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>' +
-                   '</div>' +
-                   match +
-                 '</div>';
-        });
+        div.innerHTML = renderMarkdown(content);
       }
       
       wrapper.appendChild(label);
@@ -335,15 +447,6 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
       history.insertBefore(wrapper, typing);
       scrollToBottom();
     }
-
-    window.copyToClipboard = function(btn) {
-      const pre = btn.parentElement.nextElementSibling;
-      const text = pre.innerText;
-      navigator.clipboard.writeText(text).then(() => {
-        btn.innerText = 'Copied!';
-        setTimeout(() => btn.innerText = 'Copy', 2000);
-      });
-    };
 
     document.getElementById('sendBtn').addEventListener('click', send);
     prompt.addEventListener('keydown', e => { 
@@ -362,22 +465,21 @@ export class VibeguardChatProvider implements vscode.WebviewViewProvider {
     }
 
     window.addEventListener('message', e => {
-      const msg = e.data;
-      if(msg.type==='addMessage') addMessage(msg.role, msg.content);
-      if(msg.type==='setTyping') {
-        typing.style.display = msg.value ? 'flex' : 'none';
-        if(msg.value) scrollToBottom();
-      }
-      if(msg.type==='setContext') { prompt.value = msg.value; prompt.focus(); }
-      if(msg.type==='clearChat') {
-        Array.from(history.querySelectorAll('.msg-wrapper')).forEach(el => {
-            if(el.id !== 'typing-indicator') el.remove();
-        });
-        const welcome = document.getElementById('welcome-msg');
-        if(welcome) {
-            welcome.style.display = 'flex';
-            welcome.innerHTML = '<div class="welcome-icon">🤖</div><h3 style="color:var(--text);font-weight:600;">Chat Cleared</h3><p>Ready for a new session.</p>';
+      try {
+        const msg = e.data;
+        if(msg.type==='addMessage') addMessage(msg.role, msg.content);
+        if(msg.type==='setTyping') {
+          typing.style.display = msg.value ? 'flex' : 'none';
+          if(msg.value) scrollToBottom();
         }
+        if(msg.type==='setContext') { prompt.value = msg.value; prompt.focus(); }
+        if(msg.type==='clearChat') {
+          Array.from(history.querySelectorAll('.msg-wrapper:not(#typing-indicator)')).forEach(el => el.remove());
+          const welcome = document.getElementById('welcome-msg');
+          if(welcome) { welcome.style.display = 'flex'; welcome.innerHTML = '<div class="welcome-icon">🤖</div><h3 style="color:var(--text);font-weight:600;">Chat Cleared</h3><p>Ready for a new session.</p>'; }
+        }
+      } catch(err) {
+        console.error('VibeGuard chat handler error:', err);
       }
     });
   </script>

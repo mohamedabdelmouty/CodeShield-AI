@@ -33,29 +33,40 @@ const SUPPORTED_LANGUAGES = [
 ];
 const SUPPORTED_EXTENSIONS = /\.(js|ts|jsx|tsx|mjs|cjs|py|java|dart|html|php|go|rb|c|cpp|cs|sh|yaml|yml|json)$/i;
 
-// ─── Built-in Gemini AI Config ────────────────────────────────────────────────
-// Embedded key is injected by build.js using esbuild at BUILD TIME.
-// Source code never contains the real key - safe for GitHub.
-
-const BUILT_IN_GEMINI_API_KEY = (process.env as any).BUILT_IN_KEY ?? '';
-const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT ?? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const BUILT_IN_GEMINI_MODEL = (process.env as any).BUILT_IN_MODEL ?? 'gemini-2.0-flash';
+// ─── Built-in AI Config (injected by build.js at build time) ─────────────────
+const BUILT_IN_GEMINI_KEY      = (process.env as any).BUILT_IN_KEY          ?? '';
+const BUILT_IN_GEMINI_ENDPOINT = (process.env as any).BUILT_IN_ENDPOINT     ?? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const BUILT_IN_GEMINI_MODEL    = (process.env as any).BUILT_IN_MODEL        ?? 'gemini-2.0-flash';
+const BUILT_IN_GROQ_KEY        = (process.env as any).BUILT_IN_GROQ_KEY     ?? '';
+const BUILT_IN_GROQ_MODEL      = (process.env as any).BUILT_IN_GROQ_MODEL   ?? 'llama-3.3-70b-versatile';
+const GROQ_ENDPOINT            = 'https://api.groq.com/openai/v1/chat/completions';
 
 /** Returns the effective AI config, preferring user settings over built-in defaults. */
 function getAiConfig(): {
     enabled: boolean;
-    provider: 'Gemini' | 'OpenRouter';
+    provider: 'Gemini' | 'Groq' | 'OpenRouter';
     endpoint: string;
     apiKey: string;
     model: string;
 } {
     const config = vscode.workspace.getConfiguration('vibeguard');
-    const enabled = config.get<boolean>('enableAi') ?? true;
-    const provider = config.get<string>('aiProvider') as 'Gemini' | 'OpenRouter' ?? 'Gemini';
+    const enabled  = config.get<boolean>('enableAi') ?? true;
+    const provider = (config.get<string>('aiProvider') ?? 'Groq') as 'Gemini' | 'Groq' | 'OpenRouter';
+
+    if (provider === 'Groq') {
+        const apiKey = config.get<string>('groqApiKey')?.trim() || BUILT_IN_GROQ_KEY;
+        const model  = config.get<string>('groqModel')?.trim()  || BUILT_IN_GROQ_MODEL;
+        return { enabled, provider, endpoint: GROQ_ENDPOINT, apiKey, model };
+    }
+
+    if (provider === 'OpenRouter') {
+        return { enabled, provider, endpoint: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '', model: '' };
+    }
+
+    // Gemini
     const endpoint = config.get<string>('aiEndpoint')?.trim() || BUILT_IN_GEMINI_ENDPOINT;
-    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_API_KEY;
+    const apiKey   = config.get<string>('aiApiKey')?.trim()   || BUILT_IN_GEMINI_KEY;
     const model    = config.get<string>('aiModel')?.trim()    || BUILT_IN_GEMINI_MODEL;
-    // Fix 1: Chat AI not working: missing provider field
     return { enabled, provider, endpoint, apiKey, model };
 }
 
@@ -154,14 +165,20 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('vibeguard.scanFile', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
-                vscode.window.showWarningMessage('VibeGuard: No active file to scan.');
+                vscode.window.showWarningMessage('VibeGuard: Open a file first to scan it.');
                 return;
             }
             if (!SUPPORTED_EXTENSIONS.test(editor.document.uri.fsPath)) {
-                vscode.window.showWarningMessage('VibeGuard: This file type is not supported.');
+                vscode.window.showWarningMessage(`VibeGuard: File type not supported. Supported: JS, TS, Python, Java, PHP, Go, and more.`);
                 return;
             }
-            await scanActiveFile(editor.document);
+
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: '🛡️ VibeGuard: Scanning file...', cancellable: false },
+                async () => {
+                    await scanActiveFile(editor.document);
+                }
+            );
         })
     );
 
@@ -679,36 +696,54 @@ export function deactivate(): void {
 async function scanActiveFile(document: vscode.TextDocument): Promise<void> {
     const config = vscode.workspace.getConfiguration('vibeguard');
     const disabledRules = config.get<string[]>('disabledRules') ?? [];
+    const filePath = document.uri.fsPath;
 
     try {
         const code = document.getText();
-        const filePath = document.uri.fsPath;
 
         const allRules = getAllRules();
         const enabledRuleIds = allRules
             .filter((r) => r.enabled && !disabledRules.includes(r.id))
             .map((r) => r.id);
 
-        const ai = getAiConfig();
+        // Run local scan without AI to ensure reliability
         const vulnerabilities = await scanCode(code, filePath, {
             target: filePath,
             rules: enabledRuleIds,
-            enableAi: ai.enabled,
-            aiEndpoint: ai.endpoint,
-            aiApiKey: ai.apiKey,
-            aiModel: ai.model,
+            enableAi: false,
         });
 
         diagnosticsProvider.updateFileDiagnostics(document, vulnerabilities);
 
-        // Update status bar with file-level info
-        const fileScore = Math.max(0, 100 - vulnerabilities.length * 10);
+        const count = vulnerabilities.length;
+        const fileScore = Math.max(0, 100 - count * 10);
         const grade = fileScore >= 90 ? 'A' : fileScore >= 75 ? 'B' : fileScore >= 55 ? 'C' : fileScore >= 35 ? 'D' : 'F';
-        updateStatusBar(fileScore, grade, vulnerabilities.length);
+        updateStatusBar(fileScore, grade, count);
 
-        outputChannel.appendLine(`[VibeGuard] Scanned: ${filePath} — ${vulnerabilities.length} issue(s)`);
+        outputChannel.appendLine(`[VibeGuard] Scanned: ${filePath} — ${count} issue(s)`);
+
+        const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
+        if (count === 0) {
+            vscode.window.showInformationMessage(`✅ VibeGuard: ${fileName} — No security issues found.`);
+        } else {
+            const sev = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+            for (const v of vulnerabilities) { sev[v.severity] = (sev[v.severity] || 0) + 1; }
+            const parts = (Object.entries(sev) as [string, number][])
+                .filter(([, n]) => n > 0)
+                .map(([k, n]) => `${n} ${k}`).join(', ');
+            vscode.window.showWarningMessage(
+                `🛡️ VibeGuard: ${fileName} — ${count} issue(s): ${parts}`,
+                'View in Editor'
+            ).then(action => {
+                if (action === 'View in Editor') {
+                    // Diagnostics are already shown as squiggly lines
+                    vscode.window.showTextDocument(document);
+                }
+            });
+        }
     } catch (err) {
-        outputChannel.appendLine(`[VibeGuard] Error scanning ${document.uri.fsPath}: ${err}`);
+        outputChannel.appendLine(`[VibeGuard] Error scanning ${filePath}: ${err}`);
+        vscode.window.showErrorMessage(`VibeGuard: Scan failed — ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 

@@ -6,3 +6,10 @@ tsconfig.json
 build.js
 .gitignore
 *.vsix
+node_modules/**
+.eslintrc*
+.eslintignore
+**/.eslintrc*
+**/.eslintignore
+*.test.js
+*.spec.js

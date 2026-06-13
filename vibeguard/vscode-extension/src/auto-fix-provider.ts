@@ -40,7 +40,6 @@ interface VulnData {
     owasp_category?: string;
 }
 
-const BACKEND_URL = 'http://localhost:8000';
 const DIAGNOSTIC_SOURCE = 'VibeGuard';
 
 // Map from diagnostic key → VulnData (populated by diagnostics.ts)
@@ -159,7 +158,7 @@ export async function executeAutoFix(
     );
 }
 
-/** Call the CodeShield backend /api/fix or use OpenRouter */
+/** Call Gemini directly (or OpenRouter) — no local backend needed */
 async function _fetchFix(vuln: VulnData, fileContent: string = ''): Promise<AutoFixResult> {
     const config = vscode.workspace.getConfiguration('vibeguard');
     const provider = config.get<string>('aiProvider') || 'Gemini';
@@ -170,23 +169,87 @@ async function _fetchFix(vuln: VulnData, fileContent: string = ''): Promise<Auto
             fixed_code: orResult.fixed_code,
             explanation: orResult.explanation,
             security_improvement: 'Resolved vulnerability via OpenRouter AI',
-            model_used: 'OpenRouter (' + config.get<string>('openRouterModel') + ')'
+            model_used: 'OpenRouter (' + config.get<string>('openRouterModel') + ')',
+            original_code: vuln.location?.snippet ?? '',
+            diff: '', breaking_changes: 'None expected',
+            vuln_id: vuln.id, rule_name: vuln.rule_name,
+            severity: vuln.severity, file: vuln.location.file, line: vuln.location.line,
         };
     }
 
-    const backendUrl = config.get<string>('backendUrl', BACKEND_URL);
+    // Gemini or Groq — no backend required
+    const builtInGeminiKey  = (process.env as any).BUILT_IN_KEY          ?? '';
+    const builtInEndpoint   = (process.env as any).BUILT_IN_ENDPOINT     ?? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+    const builtInGeminiModel= (process.env as any).BUILT_IN_MODEL        ?? 'gemini-2.0-flash';
+    const builtInGroqKey    = (process.env as any).BUILT_IN_GROQ_KEY     ?? '';
+    const builtInGroqModel  = (process.env as any).BUILT_IN_GROQ_MODEL   ?? 'llama-3.3-70b-versatile';
 
-    const resp = await fetch(`${backendUrl}/api/fix`, {
+    let apiKey: string, endpoint: string, model: string;
+    if (provider === 'Groq') {
+        apiKey   = config.get<string>('groqApiKey')?.trim()   || builtInGroqKey;
+        endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+        model    = config.get<string>('groqModel')?.trim()    || builtInGroqModel;
+    } else {
+        apiKey   = config.get<string>('aiApiKey')?.trim()   || builtInGeminiKey;
+        endpoint = config.get<string>('aiEndpoint')?.trim() || builtInEndpoint;
+        model    = config.get<string>('aiModel')?.trim()    || builtInGeminiModel;
+    }
+
+    if (!apiKey) {
+        throw new Error('No AI API key. Set vibeguard.aiApiKey in VS Code Settings (get a free key at aistudio.google.com/app/apikey).');
+    }
+
+    const snippet = vuln.location?.snippet ?? '';
+    const context = fileContent.slice(0, 3000);
+    const prompt =
+`You are a security expert. Fix the following vulnerability with minimal code change.
+
+Vulnerability: ${vuln.rule_name}
+Severity: ${vuln.severity}
+Issue: ${vuln.message}
+Remediation: ${vuln.remediation}
+File: ${vuln.location.file} line ${vuln.location.line}
+
+Vulnerable snippet:
+\`\`\`
+${snippet}
+\`\`\`
+
+File context (first 3000 chars):
+\`\`\`
+${context}
+\`\`\`
+
+Reply with ONLY the corrected replacement code for the snippet — no explanation, no markdown fences, just the fixed code.`;
+
+    const resp = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vuln }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 1024 }),
         signal: AbortSignal.timeout(30_000),
     });
 
     if (!resp.ok) {
-        throw new Error(`Backend returned ${resp.status}: ${await resp.text()}`);
+        const body = await resp.text().catch(() => '');
+        if (resp.status === 429) {
+            throw new Error('AI quota exceeded (429). Set your own Gemini key: Settings → vibeguard.aiApiKey → get free key at aistudio.google.com/app/apikey');
+        }
+        throw new Error(`AI API error ${resp.status}: ${body.slice(0, 200)}`);
     }
-    return resp.json() as Promise<AutoFixResult>;
+
+    const json = await resp.json() as any;
+    const fixedCode = json.choices?.[0]?.message?.content ?? '';
+
+    return {
+        fixed_code: fixedCode,
+        explanation: `AI-generated fix for "${vuln.rule_name}"`,
+        security_improvement: vuln.remediation,
+        model_used: `Gemini (${model})`,
+        original_code: snippet,
+        diff: '', breaking_changes: 'None expected',
+        vuln_id: vuln.id, rule_name: vuln.rule_name,
+        severity: vuln.severity, file: vuln.location.file, line: vuln.location.line,
+    };
 }
 
 /** Show the diff in a preview and ask the user to confirm before applying */

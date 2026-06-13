@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\mahme\\\\OneDrive\\\\Desktop\\\\CodeShield AI\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "Bash(ls -la dist/)",
+      "Bash(ls -la .env)",
+      "Bash(ls -la ../../api.env)",
+      "Bash(ls -la ../api.env)",
+      "Bash(vsce publish *)",
+      "Bash(node -e ' *)",
+      "Bash(npm version *)",
+      "Bash(node build.js)",
+      "Bash(vsce package *)",
+      "Bash(npx vsce *)"
+    ]
+  }
+}

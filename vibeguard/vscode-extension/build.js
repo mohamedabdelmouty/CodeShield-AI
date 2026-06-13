@@ -32,6 +32,8 @@ loadEnv();
 const apiKey = process.env.GEMINI_API_KEY || '';
 const endpoint = process.env.VIBEGUARD_AI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const model = process.env.VIBEGUARD_AI_MODEL || 'gemini-2.0-flash';
+const groqKey = process.env.GROQ_API_KEY || '';
+const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 if (!apiKey) {
     console.warn('[build] Warning: GEMINI_API_KEY is not set. AI features will require user configuration.');
@@ -49,9 +51,11 @@ esbuild.build({
     minify: false,
     define: {
         // These string replacements happen at compile time — not visible in source
-        'process.env.BUILT_IN_KEY':      JSON.stringify(apiKey),
-        'process.env.BUILT_IN_ENDPOINT': JSON.stringify(endpoint),
-        'process.env.BUILT_IN_MODEL':    JSON.stringify(model),
+        'process.env.BUILT_IN_KEY':       JSON.stringify(apiKey),
+        'process.env.BUILT_IN_ENDPOINT':  JSON.stringify(endpoint),
+        'process.env.BUILT_IN_MODEL':     JSON.stringify(model),
+        'process.env.BUILT_IN_GROQ_KEY':  JSON.stringify(groqKey),
+        'process.env.BUILT_IN_GROQ_MODEL':JSON.stringify(groqModel),
     },
 }).then(() => {
     console.log('[build] ✅ Extension bundled successfully → dist/extension.js');

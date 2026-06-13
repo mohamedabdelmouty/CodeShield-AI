@@ -2,7 +2,7 @@
     "name": "vibeguard-vscode",
     "displayName": "VibeGuard Security Scanner",
     "description": "Real-time AI-powered security vulnerability detection — SQL Injection, XSS, Secrets, Auto-Fix, and more. Powered by CodeShield AI.",
-    "version": "3.1.2",
+    "version": "3.1.10",
     "icon": "icon.png",
     "publisher": "vibeguardapp",
     "galleryBanner": {
@@ -228,10 +228,26 @@
                     "type": "string",
                     "enum": [
                         "Gemini",
+                        "Groq",
                         "OpenRouter"
                     ],
-                    "default": "Gemini",
+                    "enumDescriptions": [
+                        "Google Gemini (gemini-2.0-flash) — set vibeguard.aiApiKey",
+                        "Groq (llama-3.3-70b) — ultra-fast, set vibeguard.groqApiKey",
+                        "OpenRouter — set vibeguard.openRouterApiKey"
+                    ],
+                    "default": "Groq",
                     "description": "Select the AI provider for Chat, Auto-Fix, and Explain features."
+                },
+                "vibeguard.groqApiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Groq API key (get free key at console.groq.com). Used when aiProvider is Groq."
+                },
+                "vibeguard.groqModel": {
+                    "type": "string",
+                    "default": "llama-3.3-70b-versatile",
+                    "description": "Groq model name. Options: llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768."
                 },
                 "vibeguard.openRouterApiKey": {
                     "type": "string",

@@ -5,6 +5,7 @@ Handles GitHub repo cloning, file walking, rule application (regex + AST), and s
 
 import os
 import re as _re
+import math
 import tempfile
 import zipfile
 import urllib.request
@@ -30,9 +31,12 @@ MAX_FILE_SIZE_BYTES = 500_000
 MAX_TOTAL_FILES = 2000
 IGNORE_DIRS = {
     ".git", "node_modules", "dist", "build", "__pycache__",
-    ".venv", "venv", "env", "vendor", ".next", ".nuxt",
+    ".venv", "venv", "vendor", ".next", ".nuxt",
     "coverage", ".pytest_cache", "target", "out",
-    "examples", "tests", "test", "docs", "fixtures", ".github"
+    "fixtures", ".github"
+    # Note: "env", "examples", "tests", "test", "docs" removed —
+    # they can contain real vulnerable code (e.g. NodeGoat env/test.js).
+    # Rule patterns already skip files that look like test helpers.
 }
 SCANNABLE_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
@@ -47,8 +51,9 @@ SKIP_FILE_PATTERNS = [
     r'__tests__',            # test directories
     r'node_modules',         # already skipped but be explicit
 ]
+# Penalty weights — must match @vibeguard/core/src/score.ts exactly
 SEVERITY_WEIGHTS = {
-    "CRITICAL": 25, "HIGH": 15, "MEDIUM": 7, "LOW": 3, "INFO": 1,
+    "CRITICAL": 25, "HIGH": 15, "MEDIUM": 8, "LOW": 3, "INFO": 1,
 }
 
 
@@ -224,25 +229,37 @@ def scan_file(fpath: Path, repo_dir: str) -> Tuple[List[Vulnerability], int]:
     return vulns, len(lines)
 
 
-def calculate_score(vulns: List[Vulnerability]) -> RiskScore:
-    if not vulns:
-        return RiskScore(score=100, grade="A", passed=True, label="No vulnerabilities found")
-    
-    raw_penalty = sum(SEVERITY_WEIGHTS.get(v.severity.value, 1) for v in vulns)
-    
-    # Asymptotic decay formula: score = 100 / (1 + penalty / 150)
-    score = int(100 / (1 + (raw_penalty / 150.0)))
-    # Ensure it never goes below 1 for aesthetic reasons, unless there are no vulns
-    score = max(1, score)
+def calculate_score(vulns: List[Vulnerability], file_count: int = 1, threshold: int = 70) -> RiskScore:
+    """
+    Calculates a security score using the same logarithmic formula as
+    @vibeguard/core/src/score.ts — so web and VS Code extension produce
+    consistent scores for the same codebase.
 
-    grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 35 else "F"
-    passed = score >= 70
+    Formula:
+        rawPenalty        = sum of SEVERITY_WEIGHTS per vulnerability
+        normFactor        = max(1, log10(file_count + 1))   ← softens penalty on large repos
+        normalizedPenalty = rawPenalty / normFactor
+        score             = max(0, round(100 - min(100, normalizedPenalty)))
+    """
+    if not vulns:
+        return RiskScore(score=100, grade="A", passed=True, label="Excellent – No vulnerabilities found")
+
+    raw_penalty = sum(SEVERITY_WEIGHTS.get(v.severity.value, 1) for v in vulns)
+
+    # Logarithmic normalization — prevents large codebases from always hitting 0
+    norm_factor = max(1.0, math.log10(file_count + 1))
+    normalized  = raw_penalty / norm_factor
+    clamped     = min(100.0, normalized)
+    score       = max(0, round(100.0 - clamped))
+
+    grade  = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 35 else "F"
+    passed = score >= threshold
     labels = {
-        "A": "Excellent", 
-        "B": "Good", 
-        "C": "Fair — Action recommended", 
-        "D": "Poor", 
-        "F": "Critical — Immediate action"
+        "A": "Excellent – Very low risk detected",
+        "B": "Good – Minor issues found, review recommended",
+        "C": "Fair – Moderate vulnerabilities, action required",
+        "D": "Poor – Significant security issues detected",
+        "F": "Critical – Immediate remediation required",
     }
     return RiskScore(score=score, grade=grade, passed=passed, label=labels[grade])
 
@@ -285,7 +302,7 @@ def scan_repo(repo_url: str, progress_cb=None) -> ScanResult:
         if progress_cb:
             progress_cb("analyzing", {"message": "Calculating security score..."})
 
-        score = calculate_score(all_vulns)
+        score = calculate_score(all_vulns, file_count=len(files))
         summary = ScanSummary(
             CRITICAL=sum(1 for v in all_vulns if v.severity == VulnerabilitySeverity.CRITICAL),
             HIGH=sum(1 for v in all_vulns if v.severity == VulnerabilitySeverity.HIGH),
